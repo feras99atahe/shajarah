@@ -48,42 +48,40 @@ class AuthNotifier extends AsyncNotifier<void> {
   @override
   Future<void> build() async {}
 
-  /// Sign up with phone + password — no OTP required.
-  /// Supabase must have "Confirm phone" disabled in Auth settings.
+  /// Sign up with phone + password — throws on any error so the UI can catch it.
+  /// Requires "Confirm phone" to be OFF in Supabase Auth settings.
   Future<void> signUpWithPhone(String phone, String password) async {
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      await _supabase.auth.signUp(phone: phone, password: password);
-    });
+    final res = await _supabase.auth.signUp(
+      phone: phone,
+      password: password,
+    );
+    // If session is null after signUp it means phone confirmation is still ON
+    if (res.session == null && res.user == null) {
+      throw AuthException(
+        'Account created but not confirmed. '
+        'Go to Supabase → Auth → Providers → Phone → disable "Confirm phone".',
+      );
+    }
   }
 
-  /// Sign in with phone + password.
+  /// Sign in with phone + password — throws on any error so the UI can catch it.
   Future<void> signInWithPhone(String phone, String password) async {
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      await _supabase.auth.signInWithPassword(
-        phone: phone,
-        password: password,
-      );
-    });
+    await _supabase.auth.signInWithPassword(
+      phone: phone,
+      password: password,
+    );
   }
 
   /// Admin / auditor login via email + password.
   Future<void> signInWithEmailPassword(String email, String password) async {
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      await _supabase.auth.signInWithPassword(
-        email: email,
-        password: password,
-      );
-    });
+    await _supabase.auth.signInWithPassword(
+      email: email,
+      password: password,
+    );
   }
 
   Future<void> signOut() async {
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      await _supabase.auth.signOut();
-    });
+    await _supabase.auth.signOut();
   }
 
   Future<void> upsertProfile({

@@ -62,12 +62,16 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final supabase = ref.read(supabaseProvider);
+
       if (_isSignUp) {
+        // Sign up — throws if phone confirmation is still ON or any other error
         await ref.read(authNotifierProvider.notifier).signUpWithPhone(
               _fullPhone,
               _passwordCtrl.text,
             );
       } else {
+        // Sign in
         await ref.read(authNotifierProvider.notifier).signInWithPhone(
               _fullPhone,
               _passwordCtrl.text,
@@ -76,22 +80,31 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
 
       if (!mounted) return;
 
-      // Check profile completeness
-      final user = ref.read(currentUserProvider);
-      if (user != null) {
-        final supabase = ref.read(supabaseProvider);
-        final profile = await supabase
-            .from('user_profiles')
-            .select()
-            .eq('id', user.id)
-            .maybeSingle();
-        if (mounted) {
-          if (profile == null || profile['full_name'] == null) {
-            context.go('/profile-setup');
-          } else {
-            context.go('/tree');
-          }
-        }
+      // Get the current user directly from Supabase (most up-to-date)
+      final user = supabase.auth.currentUser;
+
+      if (user == null) {
+        // This usually means phone confirmation is still required
+        throw AuthException(
+          'تأكيد الحساب مطلوب.\n'
+          'من لوحة Supabase → Authentication → Providers → Phone\n'
+          '→ أوقف تشغيل "Confirm phone"',
+        );
+      }
+
+      // Check if profile is already set up
+      final profile = await supabase
+          .from('user_profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+
+      if (!mounted) return;
+
+      if (profile == null || profile['full_name'] == null) {
+        context.go('/profile-setup');
+      } else {
+        context.go('/tree');
       }
     } on AuthException catch (e) {
       if (!mounted) return;
@@ -101,6 +114,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
           content: Text(msg),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
         ),
       );
     } catch (e) {
@@ -110,6 +124,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
           content: Text(e.toString()),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
         ),
       );
     } finally {
