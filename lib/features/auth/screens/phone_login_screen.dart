@@ -17,53 +17,121 @@ class PhoneLoginScreen extends ConsumerStatefulWidget {
 }
 
 class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
-  // Local digits only (after +218) — user types 9-digit number
-  final _localCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  final _localCtrl = TextEditingController();      // digits after +218
+  final _passwordCtrl = TextEditingController();
+  final _confirmCtrl = TextEditingController();
+
+  bool _isSignUp = false;     // toggle between sign-in and sign-up
   bool _isLoading = false;
+  bool _obscurePass = true;
+  bool _obscureConfirm = true;
 
   @override
   void dispose() {
     _localCtrl.dispose();
+    _passwordCtrl.dispose();
+    _confirmCtrl.dispose();
     super.dispose();
   }
 
   String get _fullPhone => '+218${_localCtrl.text.trim()}';
 
-  // Libyan mobile prefixes: 91/92/94 (Libyana), 21 (LTT)
-  String? _validateLibyan(String? v) {
-    final digits = v?.trim() ?? '';
-    if (digits.length != 9) return 'Enter 9 digits after +218';
-    final valid = RegExp(r'^(9[124]|21)\d{7}$').hasMatch(digits);
-    if (!valid) {
-      return 'Invalid Libyan number\n'
-          'Must start with 91, 92, 94 or 21';
+  String? _validatePhone(String? v) {
+    final d = v?.trim() ?? '';
+    if (d.length != 9) return 'أدخل 9 أرقام بعد +218';
+    if (!RegExp(r'^(9[124]|21)\d{7}$').hasMatch(d)) {
+      return 'رقم ليبي غير صحيح\n(يبدأ بـ 91 أو 92 أو 94 أو 21)';
     }
+    return null;
+  }
+
+  String? _validatePassword(String? v) {
+    if (v == null || v.length < 6) return 'كلمة المرور 6 أحرف على الأقل';
+    return null;
+  }
+
+  String? _validateConfirm(String? v) {
+    if (v != _passwordCtrl.text) return 'كلمتا المرور غير متطابقتين';
     return null;
   }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
+
     try {
-      await ref
-          .read(authNotifierProvider.notifier)
-          .signInWithPhone(_fullPhone);
-      if (mounted) {
-        context.push('/otp', extra: _fullPhone);
+      if (_isSignUp) {
+        await ref.read(authNotifierProvider.notifier).signUpWithPhone(
+              _fullPhone,
+              _passwordCtrl.text,
+            );
+      } else {
+        await ref.read(authNotifierProvider.notifier).signInWithPhone(
+              _fullPhone,
+              _passwordCtrl.text,
+            );
       }
+
+      if (!mounted) return;
+
+      // Check profile completeness
+      final user = ref.read(currentUserProvider);
+      if (user != null) {
+        final supabase = ref.read(supabaseProvider);
+        final profile = await supabase
+            .from('user_profiles')
+            .select()
+            .eq('id', user.id)
+            .maybeSingle();
+        if (mounted) {
+          if (profile == null || profile['full_name'] == null) {
+            context.go('/profile-setup');
+          } else {
+            context.go('/tree');
+          }
+        }
+      }
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      final msg = _friendlyError(e.message);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  String _friendlyError(String msg) {
+    final m = msg.toLowerCase();
+    if (m.contains('invalid login')) return 'رقم الهاتف أو كلمة المرور غير صحيحة';
+    if (m.contains('already registered')) return 'هذا الرقم مسجل بالفعل — سجل دخولك';
+    if (m.contains('user not found')) return 'الرقم غير مسجل — أنشئ حساباً أولاً';
+    if (m.contains('weak password')) return 'كلمة المرور ضعيفة جداً';
+    return msg;
+  }
+
+  void _toggle() {
+    setState(() {
+      _isSignUp = !_isSignUp;
+      _formKey.currentState?.reset();
+      _passwordCtrl.clear();
+      _confirmCtrl.clear();
+    });
   }
 
   @override
@@ -78,23 +146,23 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Gap(56),
+                const Gap(52),
 
-                // Logo mark
+                // Logo
                 Container(
                   width: 72,
                   height: 72,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [AppColors.primary, AppColors.primaryLight],
+                      colors: [AppColors.primaryDark, AppColors.primary],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.3),
-                        blurRadius: 16,
+                        color: AppColors.primary.withValues(alpha: 0.35),
+                        blurRadius: 18,
                         offset: const Offset(0, 6),
                       ),
                     ],
@@ -104,45 +172,44 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                   ),
                 ).animate().fadeIn(duration: 500.ms).scale(
                       begin: const Offset(0.7, 0.7),
-                      duration: 500.ms,
                       curve: Curves.easeOutBack,
                     ),
 
-                const Gap(32),
+                const Gap(30),
 
-                Text(
-                  'مرحباً بك',
-                  style: GoogleFonts.cairo(
-                    fontSize: 36,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.textPrimary,
-                    height: 1.1,
-                  ),
-                ).animate().fadeIn(delay: 100.ms).slideX(begin: -0.2),
-
-                const Gap(4),
-
-                Text(
-                  'أدخل رقمك الليبي للمتابعة',
-                  style: GoogleFonts.cairo(
-                    fontSize: 16,
-                    color: AppColors.textSecondary,
-                  ),
-                ).animate().fadeIn(delay: 150.ms),
-
-                const Gap(6),
-
-                Text(
-                  'Enter your Libyan phone number',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: AppColors.textTertiary,
-                        fontStyle: FontStyle.italic,
+                // Title — switches between sign-in / sign-up
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: Column(
+                    key: ValueKey(_isSignUp),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _isSignUp ? 'إنشاء حساب' : 'تسجيل الدخول',
+                        style: GoogleFonts.cairo(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.textPrimary,
+                          height: 1.1,
+                        ),
                       ),
-                ).animate().fadeIn(delay: 200.ms),
+                      const Gap(4),
+                      Text(
+                        _isSignUp
+                            ? 'Create your Shajarah account'
+                            : 'Sign in to your family tree',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textTertiary,
+                              fontStyle: FontStyle.italic,
+                            ),
+                      ),
+                    ],
+                  ),
+                ).animate().fadeIn(delay: 100.ms),
 
-                const Gap(40),
+                const Gap(36),
 
-                // Phone field with +218 prefix locked
+                // ── Phone field ──────────────────────────────
                 TextFormField(
                   controller: _localCtrl,
                   keyboardType: TextInputType.phone,
@@ -150,18 +217,18 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                     FilteringTextInputFormatter.digitsOnly,
                     LengthLimitingTextInputFormatter(9),
                   ],
-                  validator: _validateLibyan,
+                  validator: _validatePhone,
                   onChanged: (_) => setState(() {}),
-                  style: const TextStyle(
+                  textDirection: TextDirection.ltr,
+                  style: GoogleFonts.inter(
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 2,
                   ),
                   decoration: InputDecoration(
-                    // Locked country prefix
                     prefixIcon: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 14),
+                          horizontal: 12, vertical: 13),
                       margin: const EdgeInsets.only(right: 4),
                       decoration: const BoxDecoration(
                         color: AppColors.primaryContainer,
@@ -178,7 +245,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                           Text(
                             '+218',
                             style: GoogleFonts.inter(
-                              fontSize: 16,
+                              fontSize: 15,
                               fontWeight: FontWeight.w700,
                               color: AppColors.primaryDark,
                             ),
@@ -187,63 +254,146 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                       ),
                     ),
                     hintText: '91 XXX XXXX',
-                    hintStyle: const TextStyle(
+                    hintStyle: GoogleFonts.inter(
                       color: AppColors.textTertiary,
                       fontSize: 18,
                       letterSpacing: 1,
                     ),
-                    helperText:
-                        'Libyan numbers only — 91, 92, 94 (Libyana) · 21 (LTT)',
+                    helperText: '91 / 92 / 94 (Libyana) · 21 (LTT)',
                     helperStyle: Theme.of(context)
                         .textTheme
                         .bodySmall
                         ?.copyWith(color: AppColors.textTertiary),
                   ),
-                ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.2),
+                ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.15),
 
-                const Gap(8),
+                const Gap(14),
 
+                // ── Password field ───────────────────────────
+                TextFormField(
+                  controller: _passwordCtrl,
+                  obscureText: _obscurePass,
+                  validator: _validatePassword,
+                  decoration: InputDecoration(
+                    labelText: 'كلمة المرور',
+                    hintText: 'Password',
+                    prefixIcon: const Icon(Icons.lock_outline_rounded),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePass
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        color: AppColors.textTertiary,
+                      ),
+                      onPressed: () =>
+                          setState(() => _obscurePass = !_obscurePass),
+                    ),
+                  ),
+                ).animate().fadeIn(delay: 270.ms).slideY(begin: 0.15),
+
+                // ── Confirm password — only on sign-up ───────
+                if (_isSignUp) ...[
+                  const Gap(14),
+                  TextFormField(
+                    controller: _confirmCtrl,
+                    obscureText: _obscureConfirm,
+                    validator: _validateConfirm,
+                    decoration: InputDecoration(
+                      labelText: 'تأكيد كلمة المرور',
+                      hintText: 'Confirm password',
+                      prefixIcon:
+                          const Icon(Icons.lock_outline_rounded),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureConfirm
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          color: AppColors.textTertiary,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscureConfirm = !_obscureConfirm),
+                      ),
+                    ),
+                  ).animate().fadeIn().slideY(begin: 0.15),
+                ],
+
+                const Gap(10),
+
+                // Admin link
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () => context.push('/admin-login'),
                     child: Text(
-                      'Admin / Auditor login',
-                      style: TextStyle(color: AppColors.accent),
+                      'دخول المشرف / Admin login',
+                      style: TextStyle(
+                        color: AppColors.accent,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
-                ).animate().fadeIn(delay: 350.ms),
+                ).animate().fadeIn(delay: 340.ms),
 
-                const Gap(28),
+                const Gap(24),
 
+                // ── Submit button ────────────────────────────
                 AppButton(
-                  label: 'متابعة  ←',
-                  onPressed: _localCtrl.text.length == 9 ? _submit : null,
+                  label: _isSignUp ? 'إنشاء الحساب' : 'دخول',
+                  onPressed: _isLoading ? null : _submit,
                   isLoading: _isLoading,
-                ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.3),
+                ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.2),
 
                 const Gap(20),
 
-                // Trust indicators
+                // ── Toggle sign-in / sign-up ─────────────────
+                Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _isSignUp
+                            ? 'لديك حساب بالفعل؟'
+                            : 'ليس لديك حساب؟',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                      ),
+                      TextButton(
+                        onPressed: _toggle,
+                        child: Text(
+                          _isSignUp ? 'سجل دخولك' : 'أنشئ حساباً',
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ).animate().fadeIn(delay: 480.ms),
+
+                const Gap(28),
+
+                // Trust badges
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     _TrustBadge(
                       icon: Icons.lock_outline_rounded,
-                      label: 'Secure',
+                      label: 'آمن',
                     ),
-                    const Gap(16),
+                    const Gap(20),
                     _TrustBadge(
-                      icon: Icons.verified_outlined,
-                      label: 'Verified',
+                      icon: Icons.no_sim_outlined,
+                      label: 'بدون رمز',
                     ),
-                    const Gap(16),
+                    const Gap(20),
                     _TrustBadge(
                       icon: Icons.family_restroom_rounded,
-                      label: 'Family',
+                      label: 'عائلي',
                     ),
                   ],
-                ).animate().fadeIn(delay: 500.ms),
+                ).animate().fadeIn(delay: 560.ms),
 
                 const Gap(40),
               ],
@@ -265,13 +415,23 @@ class _TrustBadge extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 20, color: AppColors.accent),
-        const Gap(4),
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppColors.primaryContainer,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 18, color: AppColors.primary),
+        ),
+        const Gap(5),
         Text(
           label,
-          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: AppColors.textTertiary,
-              ),
+          style: GoogleFonts.cairo(
+            fontSize: 11,
+            color: AppColors.textTertiary,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ],
     );

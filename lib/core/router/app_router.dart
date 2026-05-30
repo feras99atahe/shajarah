@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/auth/screens/admin_login_screen.dart';
-import '../../features/auth/screens/otp_screen.dart';
 import '../../features/auth/screens/phone_login_screen.dart';
 import '../../features/auth/screens/profile_setup_screen.dart';
 import '../../features/auth/screens/splash_screen.dart';
@@ -23,13 +22,6 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/login',
       builder: (_, __) => const PhoneLoginScreen(),
-    ),
-    GoRoute(
-      path: '/otp',
-      builder: (context, state) {
-        final phone = state.extra as String? ?? '';
-        return OtpScreen(phone: phone);
-      },
     ),
     GoRoute(
       path: '/admin-login',

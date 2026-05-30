@@ -18,7 +18,6 @@ final currentUserProvider = Provider<User?>((ref) {
   );
 });
 
-// Tracks role loaded from user_profiles table
 final userRoleProvider = FutureProvider<String?>((ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return null;
@@ -49,24 +48,27 @@ class AuthNotifier extends AsyncNotifier<void> {
   @override
   Future<void> build() async {}
 
-  Future<void> signInWithPhone(String phone) async {
+  /// Sign up with phone + password — no OTP required.
+  /// Supabase must have "Confirm phone" disabled in Auth settings.
+  Future<void> signUpWithPhone(String phone, String password) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await _supabase.auth.signInWithOtp(phone: phone);
+      await _supabase.auth.signUp(phone: phone, password: password);
     });
   }
 
-  Future<void> verifyOtp(String phone, String token) async {
+  /// Sign in with phone + password.
+  Future<void> signInWithPhone(String phone, String password) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await _supabase.auth.verifyOTP(
+      await _supabase.auth.signInWithPassword(
         phone: phone,
-        token: token,
-        type: OtpType.sms,
+        password: password,
       );
     });
   }
 
+  /// Admin / auditor login via email + password.
   Future<void> signInWithEmailPassword(String email, String password) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
