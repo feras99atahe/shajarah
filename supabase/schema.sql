@@ -1,13 +1,12 @@
 -- ============================================================
--- Shajarah (شجرة) — Family Tree App — Supabase Schema
--- Run this in your Supabase SQL editor after creating a project
+-- Shajarah (شجرة) — Family Tree App — Supabase Schema v2
+-- Run this in your Supabase SQL editor (drop old tables first if needed)
 -- ============================================================
 
--- Enable UUID extension
 create extension if not exists "uuid-ossp";
 
 -- ============================================================
--- TABLES (create all first, then policies)
+-- TABLES
 -- ============================================================
 
 create table public.families (
@@ -29,31 +28,49 @@ create table public.user_profiles (
 );
 
 create table public.members (
-  id          uuid primary key default uuid_generate_v4(),
-  family_id   uuid not null references public.families(id) on delete cascade,
-  full_name   text not null,
+  id           uuid primary key default uuid_generate_v4(),
+  family_id    uuid not null references public.families(id) on delete cascade,
+  full_name    text not null,
   full_name_ar text,
-  gender      text not null default 'male'
-                check (gender in ('male', 'female')),
-  birth_date  date,
-  death_date  date,
-  birth_place text,
-  phone       text,
-  photo_url   text,
-  notes       text,
-  created_by  uuid references auth.users(id) on delete set null,
-  created_at  timestamptz not null default now()
+  gender       text not null default 'male'
+                 check (gender in ('male', 'female')),
+  birth_date   date,
+  death_date   date,
+  birth_place  text,
+  phone        text,
+  photo_url    text,
+  notes        text,
+  created_by   uuid references auth.users(id) on delete set null,
+  created_at   timestamptz not null default now()
 );
 
 create table public.relationships (
-  id                  uuid primary key default uuid_generate_v4(),
-  member_id           uuid not null references public.members(id) on delete cascade,
-  related_member_id   uuid not null references public.members(id) on delete cascade,
-  relationship_type   text not null
-                        check (relationship_type in ('parent', 'child', 'spouse', 'sibling')),
-  created_at          timestamptz not null default now(),
+  id                uuid primary key default uuid_generate_v4(),
+  member_id         uuid not null references public.members(id) on delete cascade,
+  related_member_id uuid not null references public.members(id) on delete cascade,
+  relationship_type text not null
+                      check (relationship_type in ('parent','child','spouse','sibling')),
+  created_at        timestamptz not null default now(),
   unique (member_id, related_member_id, relationship_type)
 );
+
+-- ============================================================
+-- SECURITY DEFINER HELPER — avoids infinite recursion in RLS
+-- ============================================================
+
+-- Returns the family_id of the currently logged-in user.
+-- SECURITY DEFINER bypasses RLS so it can query user_profiles safely.
+create or replace function public.my_family_id()
+returns uuid
+language sql
+security definer
+stable
+as $$
+  select family_id
+  from public.user_profiles
+  where id = auth.uid()
+  limit 1;
+$$;
 
 -- ============================================================
 -- ROW LEVEL SECURITY
@@ -67,11 +84,7 @@ alter table public.relationships enable row level security;
 -- ---- families ----
 
 create policy "families_select" on public.families
-  for select using (
-    id in (
-      select family_id from public.user_profiles where id = auth.uid()
-    )
-  );
+  for select using (id = public.my_family_id());
 
 create policy "families_insert" on public.families
   for insert with check (auth.role() = 'authenticated');
@@ -80,13 +93,12 @@ create policy "families_update" on public.families
   for update using (created_by = auth.uid());
 
 -- ---- user_profiles ----
+-- Use simple id = auth.uid() to avoid ANY self-referencing subquery
 
 create policy "profiles_select" on public.user_profiles
   for select using (
     id = auth.uid()
-    or family_id in (
-      select family_id from public.user_profiles where id = auth.uid()
-    )
+    or family_id = public.my_family_id()
   );
 
 create policy "profiles_insert" on public.user_profiles
@@ -98,59 +110,37 @@ create policy "profiles_update" on public.user_profiles
 -- ---- members ----
 
 create policy "members_select" on public.members
-  for select using (
-    family_id in (
-      select family_id from public.user_profiles where id = auth.uid()
-    )
-  );
+  for select using (family_id = public.my_family_id());
 
 create policy "members_insert" on public.members
-  for insert with check (
-    family_id in (
-      select family_id from public.user_profiles where id = auth.uid()
-    )
-  );
+  for insert with check (family_id = public.my_family_id());
 
 create policy "members_update" on public.members
-  for update using (
-    family_id in (
-      select family_id from public.user_profiles where id = auth.uid()
-    )
-  );
+  for update using (family_id = public.my_family_id());
 
 create policy "members_delete" on public.members
-  for delete using (
-    family_id in (
-      select family_id from public.user_profiles where id = auth.uid()
-    )
-  );
+  for delete using (family_id = public.my_family_id());
 
 -- ---- relationships ----
 
 create policy "relationships_select" on public.relationships
   for select using (
     member_id in (
-      select id from public.members where family_id in (
-        select family_id from public.user_profiles where id = auth.uid()
-      )
+      select id from public.members where family_id = public.my_family_id()
     )
   );
 
 create policy "relationships_insert" on public.relationships
   for insert with check (
     member_id in (
-      select id from public.members where family_id in (
-        select family_id from public.user_profiles where id = auth.uid()
-      )
+      select id from public.members where family_id = public.my_family_id()
     )
   );
 
 create policy "relationships_delete" on public.relationships
   for delete using (
     member_id in (
-      select id from public.members where family_id in (
-        select family_id from public.user_profiles where id = auth.uid()
-      )
+      select id from public.members where family_id = public.my_family_id()
     )
   );
 
@@ -162,8 +152,3 @@ create index members_family_idx  on public.members(family_id);
 create index rels_member_idx     on public.relationships(member_id);
 create index rels_related_idx    on public.relationships(related_member_id);
 create index profiles_family_idx on public.user_profiles(family_id);
-
--- ============================================================
--- STORAGE — run separately in Supabase Dashboard:
--- Storage → New bucket → name: "photos" → Public bucket: ON
--- ============================================================
