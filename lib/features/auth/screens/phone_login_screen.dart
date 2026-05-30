@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -10,6 +9,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../providers/auth_provider.dart';
 
+/// Email + password auth screen (sign in & sign up).
 class PhoneLoginScreen extends ConsumerStatefulWidget {
   const PhoneLoginScreen({super.key});
 
@@ -19,30 +19,27 @@ class PhoneLoginScreen extends ConsumerStatefulWidget {
 
 class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _localCtrl = TextEditingController();      // digits after +218
+  final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
 
-  bool _isSignUp = false;     // toggle between sign-in and sign-up
+  bool _isSignUp = false;
   bool _isLoading = false;
   bool _obscurePass = true;
   bool _obscureConfirm = true;
 
   @override
   void dispose() {
-    _localCtrl.dispose();
+    _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
   }
 
-  String get _fullPhone => '+218${_localCtrl.text.trim()}';
-
-  String? _validatePhone(String? v) {
-    final d = v?.trim() ?? '';
-    if (d.length != 9) return 'أدخل 9 أرقام بعد +218';
-    if (!RegExp(r'^(9[124]|21)\d{7}$').hasMatch(d)) {
-      return 'رقم ليبي غير صحيح\n(يبدأ بـ 91 أو 92 أو 94 أو 21)';
+  String? _validateEmail(String? v) {
+    if (v == null || v.trim().isEmpty) return 'أدخل بريدك الإلكتروني';
+    if (!RegExp(r'^[\w.+-]+@[\w-]+\.[a-z]{2,}$').hasMatch(v.trim())) {
+      return 'بريد إلكتروني غير صحيح';
     }
     return null;
   }
@@ -57,88 +54,103 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
     return null;
   }
 
+  String _friendlyError(String msg) {
+    final m = msg.toLowerCase();
+    if (m.contains('invalid login') || m.contains('invalid credentials')) {
+      return 'البريد الإلكتروني أو كلمة المرور غير صحيحة';
+    }
+    if (m.contains('already registered') || m.contains('user already registered')) {
+      return 'هذا البريد مسجل بالفعل — سجل دخولك';
+    }
+    if (m.contains('email not confirmed')) {
+      return 'يرجى تأكيد بريدك الإلكتروني أولاً';
+    }
+    if (m.contains('user not found')) {
+      return 'البريد غير مسجل — أنشئ حساباً أولاً';
+    }
+    if (m.contains('weak password')) return 'كلمة المرور ضعيفة جداً';
+    if (m.contains('rate limit')) return 'حاول مرة أخرى بعد قليل';
+    return msg;
+  }
+
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
     try {
       final supabase = ref.read(supabaseProvider);
+      final email = _emailCtrl.text.trim();
+      final password = _passwordCtrl.text;
 
       if (_isSignUp) {
-        // Sign up — throws if phone confirmation is still ON or any other error
-        await ref.read(authNotifierProvider.notifier).signUpWithPhone(
-              _fullPhone,
-              _passwordCtrl.text,
+        await ref.read(authNotifierProvider.notifier).signUp(email, password);
+
+        // After sign-up Supabase may require email confirmation
+        final user = supabase.auth.currentUser;
+        if (user == null) {
+          // Email confirmation is ON — let the user know
+          if (mounted) {
+            _showInfo(
+              '📧  تم إرسال رسالة تأكيد إلى بريدك\n'
+              'افتح الرابط في الإيميل ثم ارجع لتسجيل الدخول.',
             );
+            setState(() => _isSignUp = false);
+          }
+          return;
+        }
+        await _navigateAfterAuth(supabase, user.id);
       } else {
-        // Sign in
-        await ref.read(authNotifierProvider.notifier).signInWithPhone(
-              _fullPhone,
-              _passwordCtrl.text,
-            );
-      }
-
-      if (!mounted) return;
-
-      // Get the current user directly from Supabase (most up-to-date)
-      final user = supabase.auth.currentUser;
-
-      if (user == null) {
-        // This usually means phone confirmation is still required
-        throw AuthException(
-          'تأكيد الحساب مطلوب.\n'
-          'من لوحة Supabase → Authentication → Providers → Phone\n'
-          '→ أوقف تشغيل "Confirm phone"',
-        );
-      }
-
-      // Check if profile is already set up
-      final profile = await supabase
-          .from('user_profiles')
-          .select()
-          .eq('id', user.id)
-          .maybeSingle();
-
-      if (!mounted) return;
-
-      if (profile == null || profile['full_name'] == null) {
-        context.go('/profile-setup');
-      } else {
-        context.go('/tree');
+        await ref.read(authNotifierProvider.notifier).signIn(email, password);
+        final user = supabase.auth.currentUser;
+        if (user == null) throw AuthException('حدث خطأ غير متوقع، حاول مجدداً');
+        await _navigateAfterAuth(supabase, user.id);
       }
     } on AuthException catch (e) {
       if (!mounted) return;
-      final msg = _friendlyError(e.message);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 5),
-        ),
-      );
+      _showError(_friendlyError(e.message));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString()),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 5),
-        ),
-      );
+      _showError(e.toString());
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  String _friendlyError(String msg) {
-    final m = msg.toLowerCase();
-    if (m.contains('invalid login')) return 'رقم الهاتف أو كلمة المرور غير صحيحة';
-    if (m.contains('already registered')) return 'هذا الرقم مسجل بالفعل — سجل دخولك';
-    if (m.contains('user not found')) return 'الرقم غير مسجل — أنشئ حساباً أولاً';
-    if (m.contains('weak password')) return 'كلمة المرور ضعيفة جداً';
-    return msg;
+  Future<void> _navigateAfterAuth(SupabaseClient supabase, String userId) async {
+    if (!mounted) return;
+    final profile = await supabase
+        .from('user_profiles')
+        .select()
+        .eq('id', userId)
+        .maybeSingle();
+    if (!mounted) return;
+    if (profile == null || profile['full_name'] == null) {
+      context.go('/profile-setup');
+    } else {
+      context.go('/tree');
+    }
+  }
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      ),
+    );
+  }
+
+  void _showInfo(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: AppColors.primary,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 8),
+      ),
+    );
   }
 
   void _toggle() {
@@ -193,9 +205,9 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
 
                 const Gap(30),
 
-                // Title — switches between sign-in / sign-up
+                // Title
                 AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
+                  duration: const Duration(milliseconds: 250),
                   child: Column(
                     key: ValueKey(_isSignUp),
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -225,67 +237,22 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
 
                 const Gap(36),
 
-                // ── Phone field ──────────────────────────────
+                // ── Email ────────────────────────────────────
                 TextFormField(
-                  controller: _localCtrl,
-                  keyboardType: TextInputType.phone,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(9),
-                  ],
-                  validator: _validatePhone,
-                  onChanged: (_) => setState(() {}),
-                  textDirection: TextDirection.ltr,
-                  style: GoogleFonts.inter(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 2,
-                  ),
-                  decoration: InputDecoration(
-                    prefixIcon: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 13),
-                      margin: const EdgeInsets.only(right: 4),
-                      decoration: const BoxDecoration(
-                        color: AppColors.primaryContainer,
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(12),
-                          bottomLeft: Radius.circular(12),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text('🇱🇾', style: TextStyle(fontSize: 20)),
-                          const Gap(6),
-                          Text(
-                            '+218',
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primaryDark,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    hintText: '91 XXX XXXX',
-                    hintStyle: GoogleFonts.inter(
-                      color: AppColors.textTertiary,
-                      fontSize: 18,
-                      letterSpacing: 1,
-                    ),
-                    helperText: '91 / 92 / 94 (Libyana) · 21 (LTT)',
-                    helperStyle: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: AppColors.textTertiary),
+                  controller: _emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  validator: _validateEmail,
+                  autocorrect: false,
+                  decoration: const InputDecoration(
+                    labelText: 'البريد الإلكتروني',
+                    hintText: 'example@email.com',
+                    prefixIcon: Icon(Icons.email_outlined),
                   ),
                 ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.15),
 
                 const Gap(14),
 
-                // ── Password field ───────────────────────────
+                // ── Password ─────────────────────────────────
                 TextFormField(
                   controller: _passwordCtrl,
                   obscureText: _obscurePass,
@@ -307,7 +274,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                   ),
                 ).animate().fadeIn(delay: 270.ms).slideY(begin: 0.15),
 
-                // ── Confirm password — only on sign-up ───────
+                // ── Confirm password — sign-up only ──────────
                 if (_isSignUp) ...[
                   const Gap(14),
                   TextFormField(
@@ -317,8 +284,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                     decoration: InputDecoration(
                       labelText: 'تأكيد كلمة المرور',
                       hintText: 'Confirm password',
-                      prefixIcon:
-                          const Icon(Icons.lock_outline_rounded),
+                      prefixIcon: const Icon(Icons.lock_outline_rounded),
                       suffixIcon: IconButton(
                         icon: Icon(
                           _obscureConfirm
@@ -326,14 +292,14 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                               : Icons.visibility_off_outlined,
                           color: AppColors.textTertiary,
                         ),
-                        onPressed: () =>
-                            setState(() => _obscureConfirm = !_obscureConfirm),
+                        onPressed: () => setState(
+                            () => _obscureConfirm = !_obscureConfirm),
                       ),
                     ),
                   ).animate().fadeIn().slideY(begin: 0.15),
                 ],
 
-                const Gap(10),
+                const Gap(8),
 
                 // Admin link
                 Align(
@@ -341,23 +307,20 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                   child: TextButton(
                     onPressed: () => context.push('/admin-login'),
                     child: Text(
-                      'دخول المشرف / Admin login',
-                      style: TextStyle(
-                        color: AppColors.accent,
-                        fontSize: 13,
-                      ),
+                      'دخول المشرف',
+                      style: TextStyle(color: AppColors.accent, fontSize: 13),
                     ),
                   ),
-                ).animate().fadeIn(delay: 340.ms),
+                ).animate().fadeIn(delay: 320.ms),
 
-                const Gap(24),
+                const Gap(20),
 
-                // ── Submit button ────────────────────────────
+                // ── Submit ───────────────────────────────────
                 AppButton(
                   label: _isSignUp ? 'إنشاء الحساب' : 'دخول',
                   onPressed: _isLoading ? null : _submit,
                   isLoading: _isLoading,
-                ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.2),
+                ).animate().fadeIn(delay: 380.ms).slideY(begin: 0.2),
 
                 const Gap(20),
 
@@ -367,9 +330,7 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        _isSignUp
-                            ? 'لديك حساب بالفعل؟'
-                            : 'ليس لديك حساب؟',
+                        _isSignUp ? 'لديك حساب؟' : 'ليس لديك حساب؟',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: AppColors.textSecondary,
                             ),
@@ -386,30 +347,22 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                       ),
                     ],
                   ),
-                ).animate().fadeIn(delay: 480.ms),
+                ).animate().fadeIn(delay: 440.ms),
 
-                const Gap(28),
+                const Gap(32),
 
                 // Trust badges
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
+                    _TrustBadge(icon: Icons.lock_outline_rounded, label: 'آمن'),
+                    const Gap(24),
+                    _TrustBadge(icon: Icons.verified_outlined, label: 'موثوق'),
+                    const Gap(24),
                     _TrustBadge(
-                      icon: Icons.lock_outline_rounded,
-                      label: 'آمن',
-                    ),
-                    const Gap(20),
-                    _TrustBadge(
-                      icon: Icons.no_sim_outlined,
-                      label: 'بدون رمز',
-                    ),
-                    const Gap(20),
-                    _TrustBadge(
-                      icon: Icons.family_restroom_rounded,
-                      label: 'عائلي',
-                    ),
+                        icon: Icons.family_restroom_rounded, label: 'عائلي'),
                   ],
-                ).animate().fadeIn(delay: 560.ms),
+                ).animate().fadeIn(delay: 500.ms),
 
                 const Gap(40),
               ],
@@ -432,13 +385,13 @@ class _TrustBadge extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
+          width: 44,
+          height: 44,
+          decoration: const BoxDecoration(
             color: AppColors.primaryContainer,
             shape: BoxShape.circle,
           ),
-          child: Icon(icon, size: 18, color: AppColors.primary),
+          child: Icon(icon, size: 20, color: AppColors.primary),
         ),
         const Gap(5),
         Text(

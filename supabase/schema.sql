@@ -21,7 +21,6 @@ create table public.families (
 
 create table public.user_profiles (
   id          uuid primary key references auth.users(id) on delete cascade,
-  phone       text unique,
   full_name   text,
   role        text not null default 'viewer'
                 check (role in ('admin', 'editor', 'viewer')),

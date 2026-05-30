@@ -48,32 +48,13 @@ class AuthNotifier extends AsyncNotifier<void> {
   @override
   Future<void> build() async {}
 
-  /// Sign up with phone + password — throws on any error so the UI can catch it.
-  /// Requires "Confirm phone" to be OFF in Supabase Auth settings.
-  Future<void> signUpWithPhone(String phone, String password) async {
-    final res = await _supabase.auth.signUp(
-      phone: phone,
-      password: password,
-    );
-    // If session is null after signUp it means phone confirmation is still ON
-    if (res.session == null && res.user == null) {
-      throw AuthException(
-        'Account created but not confirmed. '
-        'Go to Supabase → Auth → Providers → Phone → disable "Confirm phone".',
-      );
-    }
+  /// Sign up with email + password.
+  Future<void> signUp(String email, String password) async {
+    await _supabase.auth.signUp(email: email, password: password);
   }
 
-  /// Sign in with phone + password — throws on any error so the UI can catch it.
-  Future<void> signInWithPhone(String phone, String password) async {
-    await _supabase.auth.signInWithPassword(
-      phone: phone,
-      password: password,
-    );
-  }
-
-  /// Admin / auditor login via email + password.
-  Future<void> signInWithEmailPassword(String email, String password) async {
+  /// Sign in with email + password.
+  Future<void> signIn(String email, String password) async {
     await _supabase.auth.signInWithPassword(
       email: email,
       password: password,
@@ -87,14 +68,12 @@ class AuthNotifier extends AsyncNotifier<void> {
   Future<void> upsertProfile({
     required String userId,
     required String fullName,
-    String? phone,
     String? familyId,
     String role = 'viewer',
   }) async {
     await _supabase.from('user_profiles').upsert({
       'id': userId,
       'full_name': fullName,
-      'phone': phone,
       'family_id': familyId,
       'role': role,
     });

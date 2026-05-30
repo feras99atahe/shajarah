@@ -58,7 +58,6 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       await ref.read(authNotifierProvider.notifier).upsertProfile(
             userId: user.id,
             fullName: _nameCtrl.text.trim(),
-            phone: user.phone,
             familyId: familyId,
           );
 
