@@ -18,6 +18,7 @@ class ProfileSetupScreen extends ConsumerStatefulWidget {
 
 class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   final _nameCtrl = TextEditingController();
+  // country code already handled by login screen
   final _nameArCtrl = TextEditingController();
   final _familyNameCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
