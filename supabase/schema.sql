@@ -87,7 +87,7 @@ create policy "families_select" on public.families
   for select using (id = public.my_family_id());
 
 create policy "families_insert" on public.families
-  for insert with check (auth.role() = 'authenticated');
+  for insert with check (auth.uid() is not null);
 
 create policy "families_update" on public.families
   for update using (created_by = auth.uid());
