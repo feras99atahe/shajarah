@@ -33,7 +33,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     try {
-      await ref.read(authNotifierProvider.notifier).signInWithEmailPassword(
+      await ref.read(authNotifierProvider.notifier).signIn(
             _emailCtrl.text.trim(),
             _passwordCtrl.text,
           );

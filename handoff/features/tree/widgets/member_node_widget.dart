@@ -65,7 +65,7 @@ class MemberNodeWidget extends StatelessWidget {
           children: [
             AppAvatar(
               photoUrl: member.photoUrl,
-              name: member.shortName,
+              name: member.displayName(isArabic),
               gender: member.gender,
               size: 52,
               isDeceased: member.isDeceased,
@@ -75,7 +75,7 @@ class MemberNodeWidget extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              member.shortName,
+              member.displayName(isArabic),
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,

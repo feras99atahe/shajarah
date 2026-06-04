@@ -64,20 +64,6 @@ class AuthNotifier extends AsyncNotifier<void> {
   Future<void> signOut() async {
     await _supabase.auth.signOut();
   }
-
-  Future<void> upsertProfile({
-    required String userId,
-    required String fullName,
-    String? familyId,
-    String role = 'viewer',
-  }) async {
-    await _supabase.from('user_profiles').upsert({
-      'id': userId,
-      'full_name': fullName,
-      'family_id': familyId,
-      'role': role,
-    });
-  }
 }
 
 final authNotifierProvider =

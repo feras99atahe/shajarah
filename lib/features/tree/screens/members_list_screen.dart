@@ -16,7 +16,7 @@ class MembersListScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('All Members'),
+        title: const Text('كل الأعضاء'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: () => context.pop(),
@@ -25,6 +25,11 @@ class MembersListScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.search_rounded),
             onPressed: () => context.push('/search'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.playlist_add_rounded),
+            tooltip: 'استيراد جماعي / CSV',
+            onPressed: () => context.push('/admin/bulk-add'),
           ),
         ],
       ),
@@ -40,13 +45,13 @@ class MembersListScreen extends ConsumerWidget {
                 children: [
                   const Text('👥', style: TextStyle(fontSize: 56)),
                   const Gap(16),
-                  Text('No members yet',
+                  Text('لا يوجد أعضاء بعد',
                       style: Theme.of(context).textTheme.headlineSmall),
                   const Gap(24),
                   ElevatedButton.icon(
                     onPressed: () => context.push('/add-member'),
                     icon: const Icon(Icons.person_add_rounded),
-                    label: const Text('Add Member'),
+                    label: const Text('إضافة فرد'),
                   ),
                 ],
               ),
@@ -87,23 +92,29 @@ class MembersListScreen extends ConsumerWidget {
                             : AppColors.textPrimary,
                       ),
                 ),
-                subtitle: m.fullNameAr != null
-                    ? Text(m.fullNameAr!,
-                        style: Theme.of(context).textTheme.bodySmall)
-                    : null,
+                subtitle: Row(
+                  children: [
+                    const Icon(Icons.location_city_outlined,
+                        size: 12, color: AppColors.textTertiary),
+                    const Gap(4),
+                    Text(m.city,
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: AppColors.textTertiary)),
+                  ],
+                ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (m.age != null)
                       Text(
-                        '${m.age} yrs',
+                        '${m.age} سنة',
                         style: Theme.of(context)
                             .textTheme
                             .bodySmall
                             ?.copyWith(color: AppColors.textTertiary),
                       ),
                     const Gap(4),
-                    const Icon(Icons.chevron_right_rounded,
+                    const Icon(Icons.chevron_left_rounded,
                         color: AppColors.textTertiary),
                   ],
                 ),

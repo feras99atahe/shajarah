@@ -7,12 +7,12 @@ import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_button.dart';
 import '../../../shared/widgets/app_text_field.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../models/member.dart';
 import '../models/relationship.dart';
 import '../providers/tree_provider.dart';
 
 class AddMemberScreen extends ConsumerStatefulWidget {
-  final String? parentId; // pre-link as child of this member
-
+  final String? parentId;
   const AddMemberScreen({super.key, this.parentId});
 
   @override
@@ -21,24 +21,40 @@ class AddMemberScreen extends ConsumerStatefulWidget {
 
 class _AddMemberScreenState extends ConsumerState<AddMemberScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameCtrl = TextEditingController();
-  final _nameArCtrl = TextEditingController();
-  final _birthPlaceCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
+
+  // Paternal four-part name
+  final _firstNameCtrl      = TextEditingController();
+  final _fatherNameCtrl     = TextEditingController();
+  final _grandfatherNameCtrl= TextEditingController();
+  final _familyNameCtrl     = TextEditingController();
+
+  // Maternal four-part name
+  final _motherFirstCtrl    = TextEditingController();
+  final _motherFatherCtrl   = TextEditingController();
+  final _motherGrandfatherCtrl = TextEditingController();
+  final _motherFamilyCtrl   = TextEditingController();
+
+  // Other fields
+  final _cityCtrl           = TextEditingController();
+  final _placeOfBirthCtrl   = TextEditingController();
+  final _notesCtrl          = TextEditingController();
 
   String _gender = 'male';
   DateTime? _birthDate;
   DateTime? _deathDate;
+  bool _showBirthDate = false;
+  bool _showMaternalFields = false;
   bool _isLoading = false;
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
-    _nameArCtrl.dispose();
-    _birthPlaceCtrl.dispose();
-    _phoneCtrl.dispose();
-    _notesCtrl.dispose();
+    for (final c in [
+      _firstNameCtrl, _fatherNameCtrl, _grandfatherNameCtrl, _familyNameCtrl,
+      _motherFirstCtrl, _motherFatherCtrl, _motherGrandfatherCtrl, _motherFamilyCtrl,
+      _cityCtrl, _placeOfBirthCtrl, _notesCtrl,
+    ]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -48,23 +64,18 @@ class _AddMemberScreenState extends ConsumerState<AddMemberScreen> {
       initialDate: DateTime(1970),
       firstDate: DateTime(1800),
       lastDate: DateTime.now(),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
           colorScheme: const ColorScheme.light(primary: AppColors.primary),
         ),
         child: child!,
       ),
     );
-    if (picked != null) {
-      setState(() {
-        if (isBirth) {
-          _birthDate = picked;
-        } else {
-          _deathDate = picked;
-        }
-      });
-    }
+    if (picked != null) setState(() => isBirth ? _birthDate = picked : _deathDate = picked);
   }
+
+  String? _req(String? v) =>
+      v != null && v.trim().isNotEmpty ? null : 'Required';
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -75,25 +86,29 @@ class _AddMemberScreenState extends ConsumerState<AddMemberScreen> {
 
       final member = await ref.read(treeNotifierProvider.notifier).addMember(
             familyId: familyId,
-            fullName: _nameCtrl.text.trim(),
-            fullNameAr: _nameArCtrl.text.trim().isEmpty
-                ? null
-                : _nameArCtrl.text.trim(),
+            firstName: _firstNameCtrl.text.trim(),
+            fatherName: _fatherNameCtrl.text.trim(),
+            grandfatherName: _grandfatherNameCtrl.text.trim(),
+            familyName: _familyNameCtrl.text.trim(),
+            motherFirstName: _motherFirstCtrl.text.trim().isEmpty
+                ? null : _motherFirstCtrl.text.trim(),
+            motherFatherName: _motherFatherCtrl.text.trim().isEmpty
+                ? null : _motherFatherCtrl.text.trim(),
+            motherGrandfatherName: _motherGrandfatherCtrl.text.trim().isEmpty
+                ? null : _motherGrandfatherCtrl.text.trim(),
+            motherFamilyName: _motherFamilyCtrl.text.trim().isEmpty
+                ? null : _motherFamilyCtrl.text.trim(),
+            city: _cityCtrl.text.trim(),
             gender: _gender,
             birthDate: _birthDate,
             deathDate: _deathDate,
-            birthPlace: _birthPlaceCtrl.text.trim().isEmpty
-                ? null
-                : _birthPlaceCtrl.text.trim(),
-            phone: _phoneCtrl.text.trim().isEmpty
-                ? null
-                : _phoneCtrl.text.trim(),
+            placeOfBirth: _placeOfBirthCtrl.text.trim().isEmpty
+                ? null : _placeOfBirthCtrl.text.trim(),
+            showBirthDate: _showBirthDate,
             notes: _notesCtrl.text.trim().isEmpty
-                ? null
-                : _notesCtrl.text.trim(),
+                ? null : _notesCtrl.text.trim(),
           );
 
-      // Link to parent if provided
       if (widget.parentId != null) {
         await ref.read(treeNotifierProvider.notifier).addRelationship(
               memberId: widget.parentId!,
@@ -102,25 +117,40 @@ class _AddMemberScreenState extends ConsumerState<AddMemberScreen> {
             );
       }
 
+      // Auto-detect relationships from name data (runs silently in background)
+      final newRels = await ref
+          .read(treeNotifierProvider.notifier)
+          .autoDetectRelationships();
+
       if (mounted) {
+        final msg = newRels > 0
+            ? 'Member added — $newRels relationship${newRels == 1 ? '' : 's'} detected automatically'
+            : 'Member added';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Member added!')),
+          SnackBar(
+            content: Text(msg),
+            backgroundColor:
+                newRels > 0 ? AppColors.success : null,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
-        context.pop();
+        if (mounted) context.pop();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: AppColors.error,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 6),
+        ));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -143,154 +173,201 @@ class _AddMemberScreenState extends ConsumerState<AddMemberScreen> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            // Gender selector
-            _SectionTitle('Gender').animate().fadeIn(),
+
+            // ── Gender ──────────────────────────────────────────────────────
+            _sectionTitle('Gender'),
             const Gap(10),
-            Row(
-              children: [
-                _GenderChip(
-                  label: 'Male  ♂',
-                  selected: _gender == 'male',
-                  color: AppColors.male,
-                  bgColor: AppColors.maleLight,
-                  onTap: () => setState(() => _gender = 'male'),
+            Row(children: [
+              _GenderChip(label: 'Male ♂', selected: _gender == 'male',
+                  color: AppColors.male, bg: AppColors.maleLight,
+                  onTap: () => setState(() => _gender = 'male')),
+              const Gap(12),
+              _GenderChip(label: 'Female ♀', selected: _gender == 'female',
+                  color: AppColors.female, bg: AppColors.femaleLight,
+                  onTap: () => setState(() => _gender = 'female')),
+            ]).animate().fadeIn(delay: 50.ms),
+            const Gap(24),
+
+            // ── Paternal four-part name ──────────────────────────────────────
+            _sectionTitle('Paternal Name'),
+            const Gap(4),
+            Text('First · Father · Grandfather · Family',
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: AppColors.textTertiary)),
+            const Gap(10),
+            AppTextField(label: 'First name *', controller: _firstNameCtrl,
+                validator: _req).animate().fadeIn(delay: 100.ms).slideY(begin: 0.1),
+            const Gap(10),
+            AppTextField(label: "Father's name *", controller: _fatherNameCtrl,
+                validator: _req).animate().fadeIn(delay: 130.ms).slideY(begin: 0.1),
+            const Gap(10),
+            AppTextField(label: "Grandfather's name *", controller: _grandfatherNameCtrl,
+                validator: _req).animate().fadeIn(delay: 160.ms).slideY(begin: 0.1),
+            const Gap(10),
+            AppTextField(label: 'Family / Tribe name *', controller: _familyNameCtrl,
+                validator: _req).animate().fadeIn(delay: 190.ms).slideY(begin: 0.1),
+            const Gap(24),
+
+            // ── City ────────────────────────────────────────────────────────
+            _sectionTitle('Location'),
+            const Gap(4),
+            Text('Used to scope name searches and prevent regional overlaps.',
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: AppColors.textTertiary)),
+            const Gap(10),
+            AppTextField(
+              label: 'City *',
+              controller: _cityCtrl,
+              validator: _req,
+              prefix: const Icon(Icons.location_city_outlined),
+            ).animate().fadeIn(delay: 220.ms).slideY(begin: 0.1),
+            const Gap(24),
+
+            // ── Maternal name (optional, collapsible) ───────────────────────
+            _sectionTitle('Maternal Name'),
+            const Gap(4),
+            Text('Hidden from others unless they have a verified family connection.',
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: AppColors.textTertiary)),
+            const Gap(10),
+            GestureDetector(
+              onTap: () => setState(() => _showMaternalFields = !_showMaternalFields),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceVariant,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border),
                 ),
-                const Gap(12),
-                _GenderChip(
-                  label: 'Female  ♀',
-                  selected: _gender == 'female',
-                  color: AppColors.female,
-                  bgColor: AppColors.femaleLight,
-                  onTap: () => setState(() => _gender = 'female'),
+                child: Row(
+                  children: [
+                    Icon(_showMaternalFields
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                        color: AppColors.primary),
+                    const Gap(8),
+                    Text(_showMaternalFields ? 'Hide maternal fields' : 'Add maternal name (optional)',
+                        style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w500)),
+                  ],
                 ),
-              ],
-            ).animate().fadeIn(delay: 50.ms),
+              ),
+            ).animate().fadeIn(delay: 240.ms),
+            if (_showMaternalFields) ...[
+              const Gap(10),
+              AppTextField(label: "Mother's first name", controller: _motherFirstCtrl)
+                  .animate().fadeIn().slideY(begin: 0.1),
+              const Gap(10),
+              AppTextField(label: "Mother's father name", controller: _motherFatherCtrl)
+                  .animate().fadeIn(delay: 30.ms).slideY(begin: 0.1),
+              const Gap(10),
+              AppTextField(label: "Mother's grandfather name", controller: _motherGrandfatherCtrl)
+                  .animate().fadeIn(delay: 60.ms).slideY(begin: 0.1),
+              const Gap(10),
+              AppTextField(label: "Mother's family name", controller: _motherFamilyCtrl)
+                  .animate().fadeIn(delay: 90.ms).slideY(begin: 0.1),
+            ],
             const Gap(24),
-            _SectionTitle('Name').animate().fadeIn(delay: 100.ms),
+
+            // ── Dates ────────────────────────────────────────────────────────
+            _sectionTitle('Dates'),
             const Gap(10),
-            AppTextField(
-              label: 'Full name *',
-              controller: _nameCtrl,
-              validator: (v) =>
-                  v != null && v.trim().isNotEmpty ? null : 'Required',
-            ).animate().fadeIn(delay: 150.ms).slideY(begin: 0.1),
-            const Gap(12),
-            AppTextField(
-              label: 'الاسم بالعربية',
-              controller: _nameArCtrl,
-              textDirection: TextDirection.rtl,
-            ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1),
+            _DateField(label: 'Date of birth', value: _birthDate,
+                onTap: () => _pickDate(true))
+                .animate().fadeIn(delay: 260.ms).slideY(begin: 0.1),
+            const Gap(10),
+            _DateField(label: 'Date of death (if applicable)', value: _deathDate,
+                onTap: () => _pickDate(false),
+                onClear: _deathDate != null ? () => setState(() => _deathDate = null) : null)
+                .animate().fadeIn(delay: 280.ms).slideY(begin: 0.1),
             const Gap(24),
-            _SectionTitle('Dates').animate().fadeIn(delay: 250.ms),
+
+            // ── Additional ───────────────────────────────────────────────────
+            _sectionTitle('Additional Details'),
             const Gap(10),
-            _DateField(
-              label: 'Date of birth',
-              value: _birthDate,
-              onTap: () => _pickDate(true),
-            ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1),
-            const Gap(12),
-            _DateField(
-              label: 'Date of death (if applicable)',
-              value: _deathDate,
-              onTap: () => _pickDate(false),
-              onClear: _deathDate != null
-                  ? () => setState(() => _deathDate = null)
-                  : null,
-            ).animate().fadeIn(delay: 350.ms).slideY(begin: 0.1),
+            AppTextField(label: 'Place of birth', controller: _placeOfBirthCtrl,
+                prefix: const Icon(Icons.location_on_outlined))
+                .animate().fadeIn(delay: 300.ms).slideY(begin: 0.1),
+            const Gap(10),
+            AppTextField(label: 'Notes', controller: _notesCtrl, maxLines: 3)
+                .animate().fadeIn(delay: 320.ms).slideY(begin: 0.1),
             const Gap(24),
-            _SectionTitle('Details').animate().fadeIn(delay: 400.ms),
+
+            // ── Privacy ───────────────────────────────────────────────────────
+            _sectionTitle('Privacy'),
             const Gap(10),
-            AppTextField(
-              label: 'Place of birth',
-              controller: _birthPlaceCtrl,
-              prefix: const Icon(Icons.location_on_outlined),
-            ).animate().fadeIn(delay: 450.ms).slideY(begin: 0.1),
-            const Gap(12),
-            AppTextField(
-              label: 'Phone number',
-              controller: _phoneCtrl,
-              keyboardType: TextInputType.phone,
-              prefix: const Icon(Icons.phone_outlined),
-            ).animate().fadeIn(delay: 500.ms).slideY(begin: 0.1),
-            const Gap(12),
-            AppTextField(
-              label: 'Notes',
-              controller: _notesCtrl,
-              maxLines: 3,
-            ).animate().fadeIn(delay: 550.ms).slideY(begin: 0.1),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Show birth date to verified relatives'),
+                subtitle: const Text('Only visible to family members connected in the tree'),
+                value: _showBirthDate,
+                onChanged: (v) => setState(() => _showBirthDate = v),
+                activeColor: AppColors.primary,
+              ),
+            ).animate().fadeIn(delay: 340.ms),
             const Gap(32),
+
+            // ── Save ─────────────────────────────────────────────────────────
             AppButton(
               label: 'Add Member',
               onPressed: _save,
               isLoading: _isLoading,
-            ).animate().fadeIn(delay: 600.ms).slideY(begin: 0.2),
+            ).animate().fadeIn(delay: 360.ms).slideY(begin: 0.2),
             const Gap(40),
           ],
         ),
       ),
     );
   }
+
+  Widget _sectionTitle(String title) => Text(
+        title.toUpperCase(),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: AppColors.textTertiary,
+              letterSpacing: 1.2,
+            ),
+      );
 }
 
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  const _SectionTitle(this.title);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      title.toUpperCase(),
-      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-            color: AppColors.textTertiary,
-            letterSpacing: 1.2,
-          ),
-    );
-  }
-}
+// ── Shared widgets ─────────────────────────────────────────────────────────────
 
 class _GenderChip extends StatelessWidget {
   final String label;
   final bool selected;
   final Color color;
-  final Color bgColor;
+  final Color bg;
   final VoidCallback onTap;
 
   const _GenderChip({
-    required this.label,
-    required this.selected,
-    required this.color,
-    required this.bgColor,
-    required this.onTap,
+    required this.label, required this.selected,
+    required this.color, required this.bg, required this.onTap,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: selected ? color : AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? color : AppColors.border,
-              width: selected ? 2 : 1,
+  Widget build(BuildContext context) => Expanded(
+        child: GestureDetector(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              color: selected ? color : AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: selected ? color : AppColors.border,
+                  width: selected ? 2 : 1),
             ),
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: selected ? Colors.white : AppColors.textSecondary,
-            ),
+            child: Text(label, textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w600,
+                    color: selected ? Colors.white : AppColors.textSecondary)),
           ),
         ),
-      ),
-    );
-  }
+      );
 }
 
 class _DateField extends StatelessWidget {
@@ -299,27 +376,20 @@ class _DateField extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onClear;
 
-  const _DateField({
-    required this.label,
-    this.value,
-    required this.onTap,
-    this.onClear,
-  });
+  const _DateField({required this.label, this.value, required this.onTap, this.onClear});
 
   @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          children: [
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(children: [
             const Icon(Icons.calendar_today_outlined,
                 size: 18, color: AppColors.textTertiary),
             const Gap(12),
@@ -329,9 +399,7 @@ class _DateField extends StatelessWidget {
                     ? '${value!.day}/${value!.month}/${value!.year}'
                     : label,
                 style: TextStyle(
-                  color: value != null
-                      ? AppColors.textPrimary
-                      : AppColors.textTertiary,
+                  color: value != null ? AppColors.textPrimary : AppColors.textTertiary,
                   fontSize: 15,
                 ),
               ),
@@ -342,9 +410,7 @@ class _DateField extends StatelessWidget {
                 child: const Icon(Icons.close_rounded,
                     size: 18, color: AppColors.textTertiary),
               ),
-          ],
+          ]),
         ),
-      ),
-    );
-  }
+      );
 }

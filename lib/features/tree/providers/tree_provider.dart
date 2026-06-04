@@ -12,12 +12,8 @@ import '../models/family.dart' as family_model;
 final currentFamilyProvider = FutureProvider<family_model.Family?>((ref) async {
   final familyId = await ref.watch(userFamilyIdProvider.future);
   if (familyId == null) return null;
-  final supabase = ref.watch(supabaseProvider);
-  final data = await supabase
-      .from('families')
-      .select()
-      .eq('id', familyId)
-      .maybeSingle();
+  final data = await ref.watch(supabaseProvider)
+      .from('families').select().eq('id', familyId).maybeSingle();
   if (data == null) return null;
   return family_model.Family.fromJson(data);
 });
@@ -29,17 +25,12 @@ final currentFamilyProvider = FutureProvider<family_model.Family?>((ref) async {
 final membersProvider = FutureProvider<List<Member>>((ref) async {
   final familyId = await ref.watch(userFamilyIdProvider.future);
   if (familyId == null) return [];
-  final supabase = ref.watch(supabaseProvider);
-  final data = await supabase
-      .from('members')
-      .select()
-      .eq('family_id', familyId)
-      .order('created_at');
+  final data = await ref.watch(supabaseProvider)
+      .from('members').select().eq('family_id', familyId).order('created_at');
   return (data as List).map((e) => Member.fromJson(e)).toList();
 });
 
-final memberByIdProvider =
-    FutureProvider.family<Member?, String>((ref, id) async {
+final memberByIdProvider = FutureProvider.family<Member?, String>((ref, id) async {
   final members = await ref.watch(membersProvider.future);
   try {
     return members.firstWhere((m) => m.id == id);
@@ -49,71 +40,88 @@ final memberByIdProvider =
 });
 
 // ---------------------------------------------------------------------------
+// Privacy — viewer's linked tree member
+// ---------------------------------------------------------------------------
+
+final linkedMemberIdProvider = FutureProvider<String?>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return null;
+  final data = await ref.watch(supabaseProvider)
+      .from('user_profiles')
+      .select('linked_member_id')
+      .eq('id', user.id)
+      .maybeSingle();
+  return data?['linked_member_id'] as String?;
+});
+
+/// Returns true if the viewer's linked member has any graph path to [targetId].
+final isConnectedToProvider =
+    FutureProvider.family<bool, String>((ref, targetId) async {
+  final linkedId = await ref.watch(linkedMemberIdProvider.future);
+  if (linkedId == null) return false;
+  if (linkedId == targetId) return true;
+  final adjacency = await ref.watch(adjacencyProvider.future);
+  final visited = <String>{linkedId};
+  final queue = [linkedId];
+  while (queue.isNotEmpty) {
+    final cur = queue.removeAt(0);
+    for (final (nId, _) in adjacency[cur] ?? const <(String, RelationshipType)>[]) {
+      if (nId == targetId) return true;
+      if (visited.add(nId)) queue.add(nId);
+    }
+  }
+  return false;
+});
+
+// ---------------------------------------------------------------------------
 // Relationships
 // ---------------------------------------------------------------------------
 
 final relationshipsProvider = FutureProvider<List<Relationship>>((ref) async {
   final familyId = await ref.watch(userFamilyIdProvider.future);
   if (familyId == null) return [];
-  final supabase = ref.watch(supabaseProvider);
-  // Get all member IDs for this family
-  final memberData = await supabase
-      .from('members')
-      .select('id')
-      .eq('family_id', familyId);
-  final memberIds = (memberData as List).map((e) => e['id'] as String).toList();
-  if (memberIds.isEmpty) return [];
-  final data = await supabase
-      .from('relationships')
-      .select()
-      .inFilter('member_id', memberIds);
+  final memberData = await ref.watch(supabaseProvider)
+      .from('members').select('id').eq('family_id', familyId);
+  final ids = (memberData as List).map((e) => e['id'] as String).toList();
+  if (ids.isEmpty) return [];
+  final data = await ref.watch(supabaseProvider)
+      .from('relationships').select().inFilter('member_id', ids);
   return (data as List).map((e) => Relationship.fromJson(e)).toList();
 });
 
-// Returns map: memberId -> list of (relatedMemberId, type)
 final adjacencyProvider =
     FutureProvider<Map<String, List<(String, RelationshipType)>>>((ref) async {
   final rels = await ref.watch(relationshipsProvider.future);
   final map = <String, List<(String, RelationshipType)>>{};
   for (final r in rels) {
     map.putIfAbsent(r.memberId, () => []).add((r.relatedMemberId, r.type));
-    // Add inverse
-    map
-        .putIfAbsent(r.relatedMemberId, () => [])
-        .add((r.memberId, r.type.inverse));
+    map.putIfAbsent(r.relatedMemberId, () => []).add((r.memberId, r.type.inverse));
   }
   return map;
 });
-
-// ---------------------------------------------------------------------------
-// Member relationships for a given member
-// ---------------------------------------------------------------------------
 
 final memberRelationshipsProvider =
     FutureProvider.family<MemberRelationships, String>((ref, memberId) async {
   final adjacency = await ref.watch(adjacencyProvider.future);
   final members = await ref.watch(membersProvider.future);
   final memberMap = {for (final m in members) m.id: m};
-
   final connected = adjacency[memberId] ?? [];
 
-  List<Member> parents = [];
-  List<Member> children = [];
-  List<Member> spouses = [];
-  List<Member> siblings = [];
+  final parents = <Member>[];
+  final children = <Member>[];
+  final spouses = <Member>[];
+  final siblings = <Member>[];
 
+  final seen = <String>{};
   for (final (relId, type) in connected) {
-    final member = memberMap[relId];
-    if (member == null) continue;
+    if (!seen.add(relId)) continue;
+    final m = memberMap[relId];
+    if (m == null) continue;
     switch (type) {
-      case RelationshipType.parent:
-        parents.add(member);
-      case RelationshipType.child:
-        children.add(member);
-      case RelationshipType.spouse:
-        spouses.add(member);
-      case RelationshipType.sibling:
-        siblings.add(member);
+      case RelationshipType.parent:   parents.add(m);
+      case RelationshipType.child:    children.add(m);
+      case RelationshipType.spouse:   spouses.add(m);
+      case RelationshipType.sibling:  siblings.add(m);
     }
   }
 
@@ -140,7 +148,7 @@ class MemberRelationships {
 }
 
 // ---------------------------------------------------------------------------
-// Tree Notifier — CRUD
+// TreeNotifier — CRUD
 // ---------------------------------------------------------------------------
 
 class TreeNotifier extends AsyncNotifier<void> {
@@ -151,31 +159,44 @@ class TreeNotifier extends AsyncNotifier<void> {
 
   Future<Member> addMember({
     required String familyId,
-    required String fullName,
-    String? fullNameAr,
+    required String firstName,
+    required String fatherName,
+    required String grandfatherName,
+    required String familyName,
+    String? motherFirstName,
+    String? motherFatherName,
+    String? motherGrandfatherName,
+    String? motherFamilyName,
+    required String city,
     required String gender,
     DateTime? birthDate,
     DateTime? deathDate,
-    String? birthPlace,
-    String? phone,
+    String? placeOfBirth,
+    bool showBirthDate = false,
     String? notes,
   }) async {
-    state = const AsyncLoading();
     final userId = ref.read(currentUserProvider)?.id;
     final data = await _db.from('members').insert({
       'family_id': familyId,
-      'full_name': fullName,
-      'full_name_ar': fullNameAr,
+      'first_name': firstName,
+      'father_name': fatherName,
+      'grandfather_name': grandfatherName,
+      'family_name': familyName,
+      if (motherFirstName != null) 'mother_first_name': motherFirstName,
+      if (motherFatherName != null) 'mother_father_name': motherFatherName,
+      if (motherGrandfatherName != null)
+        'mother_grandfather_name': motherGrandfatherName,
+      if (motherFamilyName != null) 'mother_family_name': motherFamilyName,
+      'city': city,
       'gender': gender,
       'birth_date': birthDate?.toIso8601String().split('T')[0],
       'death_date': deathDate?.toIso8601String().split('T')[0],
-      'birth_place': birthPlace,
-      'phone': phone,
+      'place_of_birth': placeOfBirth,
+      'show_birth_date': showBirthDate,
       'notes': notes,
       'created_by': userId,
     }).select().single();
     ref.invalidate(membersProvider);
-    state = const AsyncData(null);
     return Member.fromJson(data);
   }
 
@@ -190,18 +211,24 @@ class TreeNotifier extends AsyncNotifier<void> {
     ref.invalidate(relationshipsProvider);
   }
 
+  Future<List<Member>> bulkAddMembers(List<Map<String, dynamic>> rows) async {
+    final userId = ref.read(currentUserProvider)?.id;
+    final payload = rows.map((r) => {...r, 'created_by': userId}).toList();
+    final data = await _db.from('members').insert(payload).select();
+    ref.invalidate(membersProvider);
+    return (data as List).map((e) => Member.fromJson(e)).toList();
+  }
+
   Future<void> addRelationship({
     required String memberId,
     required String relatedMemberId,
     required RelationshipType type,
   }) async {
-    // Insert forward relationship
     await _db.from('relationships').insert({
       'member_id': memberId,
       'related_member_id': relatedMemberId,
       'relationship_type': type.value,
     });
-    // Insert inverse
     await _db.from('relationships').insert({
       'member_id': relatedMemberId,
       'related_member_id': memberId,
@@ -214,25 +241,34 @@ class TreeNotifier extends AsyncNotifier<void> {
     required String memberId,
     required String relatedMemberId,
   }) async {
-    await _db
-        .from('relationships')
-        .delete()
-        .eq('member_id', memberId)
-        .eq('related_member_id', relatedMemberId);
-    await _db
-        .from('relationships')
-        .delete()
-        .eq('member_id', relatedMemberId)
-        .eq('related_member_id', memberId);
+    await _db.from('relationships').delete()
+        .eq('member_id', memberId).eq('related_member_id', relatedMemberId);
+    await _db.from('relationships').delete()
+        .eq('member_id', relatedMemberId).eq('related_member_id', memberId);
     ref.invalidate(relationshipsProvider);
   }
 
-  Future<void> uploadPhoto(String memberId, String localPath) async {
-    final supabase = ref.read(supabaseProvider);
-    final fileName = 'members/$memberId.jpg';
-    await supabase.storage.from('photos').upload(fileName, null as dynamic);
-    final url = supabase.storage.from('photos').getPublicUrl(fileName);
-    await updateMember(memberId, {'photo_url': url});
+  /// Scans all members and auto-creates relationships from name data.
+  /// Returns the number of new relationship rows created.
+  Future<int> autoDetectRelationships() async {
+    final familyId = await ref.read(userFamilyIdProvider.future);
+    if (familyId == null) return 0;
+    final result = await _db.rpc(
+      'auto_detect_relationships',
+      params: {'p_family_id': familyId},
+    );
+    ref.invalidate(relationshipsProvider);
+    ref.invalidate(adjacencyProvider);
+    return (result as int?) ?? 0;
+  }
+
+  /// Links the current user's profile to a tree member.
+  Future<void> linkUserToMember(String memberId) async {
+    final userId = ref.read(currentUserProvider)?.id;
+    if (userId == null) return;
+    await _db.from('user_profiles')
+        .update({'linked_member_id': memberId}).eq('id', userId);
+    ref.invalidate(linkedMemberIdProvider);
   }
 }
 

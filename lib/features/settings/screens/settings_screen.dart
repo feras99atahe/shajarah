@@ -15,6 +15,8 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = ref.watch(_localeProvider);
     final isAr = locale.languageCode == 'ar';
+    final roleAsync = ref.watch(userRoleProvider);
+    final isAdmin = roleAsync.valueOrNull == 'admin';
 
     return Scaffold(
       appBar: AppBar(
@@ -27,6 +29,19 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          if (isAdmin) ...[
+            _SectionCard(
+              title: 'ADMINISTRATION',
+              children: [
+                _SettingsTile(
+                  icon: Icons.admin_panel_settings_rounded,
+                  label: 'Admin Dashboard',
+                  onTap: () => context.push('/admin'),
+                ),
+              ],
+            ).animate().fadeIn().slideY(begin: 0.2),
+            const Gap(16),
+          ],
           _SectionCard(
             title: 'LANGUAGE',
             children: [

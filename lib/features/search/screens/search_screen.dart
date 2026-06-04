@@ -11,16 +11,19 @@ import '../../tree/providers/tree_provider.dart';
 final _searchQueryProvider = StateProvider<String>((ref) => '');
 
 final _searchResultsProvider = Provider<List<Member>>((ref) {
-  final query = ref.watch(_searchQueryProvider).toLowerCase().trim();
-  final membersAsync = ref.watch(membersProvider);
-  return membersAsync.when(
+  final q = ref.watch(_searchQueryProvider).trim().toLowerCase();
+  return ref.watch(membersProvider).when(
     data: (members) {
-      if (query.isEmpty) return members;
+      if (q.isEmpty) return members;
       return members.where((m) {
-        return m.fullName.toLowerCase().contains(query) ||
-            (m.fullNameAr?.contains(query) ?? false) ||
-            (m.birthPlace?.toLowerCase().contains(query) ?? false) ||
-            (m.phone?.contains(query) ?? false);
+        // Search across all four paternal name parts + city + place of birth
+        return m.firstName.toLowerCase().contains(q) ||
+            m.fatherName.toLowerCase().contains(q) ||
+            m.grandfatherName.toLowerCase().contains(q) ||
+            m.familyName.toLowerCase().contains(q) ||
+            m.fullName.toLowerCase().contains(q) ||
+            m.city.toLowerCase().contains(q) ||
+            (m.placeOfBirth?.toLowerCase().contains(q) ?? false);
       }).toList();
     },
     loading: () => [],
@@ -36,7 +39,7 @@ class SearchScreen extends ConsumerStatefulWidget {
 }
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
-  final _ctrl = TextEditingController();
+  final _ctrl  = TextEditingController();
   final _focus = FocusNode();
 
   @override
@@ -55,7 +58,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     final results = ref.watch(_searchResultsProvider);
-    final query = ref.watch(_searchQueryProvider);
+    final query   = ref.watch(_searchQueryProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -65,7 +68,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           onChanged: (v) =>
               ref.read(_searchQueryProvider.notifier).state = v,
           decoration: InputDecoration(
-            hintText: 'Search members...',
+            hintText: 'Search by name, city, place of birth…',
             border: InputBorder.none,
             enabledBorder: InputBorder.none,
             focusedBorder: InputBorder.none,
@@ -97,8 +100,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: results.length,
               itemBuilder: (context, i) {
-                final member = results[i];
-                return _MemberTile(member: member)
+                final m = results[i];
+                return _MemberTile(member: m)
                     .animate()
                     .fadeIn(delay: (i * 30).ms)
                     .slideX(begin: 0.1);
@@ -115,39 +118,35 @@ class _MemberTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
       leading: AppAvatar(
         photoUrl: member.photoUrl,
-        name: member.fullName,
+        name: member.shortName,
         gender: member.gender,
         size: 48,
         isDeceased: member.isDeceased,
       ),
-      title: Text(
-        member.fullName,
-        style: Theme.of(context).textTheme.titleMedium,
+      title: Text(member.fullName,
+          style: Theme.of(context).textTheme.titleMedium),
+      subtitle: Row(
+        children: [
+          const Icon(Icons.location_city_outlined,
+              size: 12, color: AppColors.textTertiary),
+          const Gap(4),
+          Text(member.city,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: AppColors.textTertiary)),
+        ],
       ),
-      subtitle: member.fullNameAr != null
-          ? Text(
-              member.fullNameAr!,
-              style: Theme.of(context).textTheme.bodySmall,
-            )
-          : member.birthPlace != null
-              ? Text(
-                  member.birthPlace!,
-                  style: Theme.of(context).textTheme.bodySmall,
-                )
-              : null,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
-              color: member.isMale
-                  ? AppColors.maleLight
-                  : AppColors.femaleLight,
+              color: member.isMale ? AppColors.maleLight : AppColors.femaleLight,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -159,8 +158,7 @@ class _MemberTile extends StatelessWidget {
             ),
           ),
           const Gap(4),
-          const Icon(Icons.chevron_right_rounded,
-              color: AppColors.textTertiary),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.textTertiary),
         ],
       ),
       onTap: () => context.push('/member/${member.id}'),
@@ -178,10 +176,10 @@ class _EmptySearch extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            hasQuery ? '🔍' : '👥',
-            style: const TextStyle(fontSize: 56),
-          ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
+          Text(hasQuery ? '🔍' : '👥',
+                  style: const TextStyle(fontSize: 56))
+              .animate()
+              .scale(duration: 400.ms, curve: Curves.easeOutBack),
           const Gap(16),
           Text(
             hasQuery ? 'No members found' : 'Search your family tree',
@@ -190,11 +188,10 @@ class _EmptySearch extends StatelessWidget {
           const Gap(8),
           Text(
             hasQuery
-                ? 'Try a different name or keyword'
-                : 'Search by name, place, or phone',
+                ? 'Try a different name or city'
+                : 'Search by first name, family name, city, or place of birth',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+                  color: AppColors.textSecondary),
             textAlign: TextAlign.center,
           ),
         ],

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../../features/admin/screens/admin_dashboard_screen.dart';
+import '../../features/admin/screens/bulk_add_members_screen.dart';
 import '../../features/auth/screens/admin_login_screen.dart';
 import '../../features/auth/screens/phone_login_screen.dart';
 import '../../features/auth/screens/profile_setup_screen.dart';
@@ -64,6 +66,14 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/settings',
       builder: (_, __) => const SettingsScreen(),
+    ),
+    GoRoute(
+      path: '/admin',
+      builder: (_, __) => const AdminDashboardScreen(),
+    ),
+    GoRoute(
+      path: '/admin/bulk-add',
+      builder: (_, __) => const BulkAddMembersScreen(),
     ),
   ],
   errorBuilder: (context, state) => Scaffold(

@@ -178,25 +178,15 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
 
                 // Logo
                 Container(
-                  width: 72,
-                  height: 72,
+                  width: 76,
+                  height: 76,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppColors.primaryDark, AppColors.primary],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.35),
-                        blurRadius: 18,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
+                    color: AppColors.primaryContainer,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.accent, width: 1.8),
                   ),
                   child: const Center(
-                    child: Text('🌳', style: TextStyle(fontSize: 36)),
+                    child: Text('🌳', style: TextStyle(fontSize: 38)),
                   ),
                 ).animate().fadeIn(duration: 500.ms).scale(
                       begin: const Offset(0.7, 0.7),
@@ -214,9 +204,9 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                     children: [
                       Text(
                         _isSignUp ? 'إنشاء حساب' : 'تسجيل الدخول',
-                        style: GoogleFonts.cairo(
-                          fontSize: 34,
-                          fontWeight: FontWeight.w900,
+                        style: GoogleFonts.reemKufi(
+                          fontSize: 36,
+                          fontWeight: FontWeight.w700,
                           color: AppColors.textPrimary,
                           height: 1.1,
                         ),
@@ -224,11 +214,10 @@ class _PhoneLoginScreenState extends ConsumerState<PhoneLoginScreen> {
                       const Gap(4),
                       Text(
                         _isSignUp
-                            ? 'Create your Shajarah account'
-                            : 'Sign in to your family tree',
+                            ? 'انضم إلى شجرة عائلتك'
+                            : 'سجّل الدخول إلى شجرة عائلتك',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: AppColors.textTertiary,
-                              fontStyle: FontStyle.italic,
                             ),
                       ),
                     ],
@@ -396,7 +385,7 @@ class _TrustBadge extends StatelessWidget {
         const Gap(5),
         Text(
           label,
-          style: GoogleFonts.cairo(
+          style: GoogleFonts.reemKufi(
             fontSize: 11,
             color: AppColors.textTertiary,
             fontWeight: FontWeight.w500,

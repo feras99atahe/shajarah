@@ -17,14 +17,14 @@ class TreePainter extends CustomPainter {
   });
 
   final _parentPaint = Paint()
-    ..color = AppColors.textTertiary.withOpacity(0.5)
-    ..strokeWidth = 1.8
+    ..color = AppColors.primary.withValues(alpha: 0.45)
+    ..strokeWidth = 2.0
     ..style = PaintingStyle.stroke
     ..strokeCap = StrokeCap.round;
 
   final _spousePaint = Paint()
-    ..color = AppColors.female.withOpacity(0.5)
-    ..strokeWidth = 1.8
+    ..color = AppColors.accent.withValues(alpha: 0.6)
+    ..strokeWidth = 2.0
     ..style = PaintingStyle.stroke
     ..strokeCap = StrokeCap.round
     ..strokeJoin = StrokeJoin.round;

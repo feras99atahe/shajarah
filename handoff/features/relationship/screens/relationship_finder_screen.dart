@@ -251,10 +251,11 @@ class _MemberSelector extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(member!.fullName,
+                        Text(member!.displayName(true),
                             style: Theme.of(context).textTheme.titleMedium),
-                        Text(member!.city,
-                            style: Theme.of(context).textTheme.bodySmall),
+                        if (member!.fullNameAr != null)
+                          Text(member!.fullName,
+                              style: Theme.of(context).textTheme.bodySmall),
                       ],
                     ),
                   ),
@@ -328,7 +329,7 @@ class _ResultSection extends StatelessWidget {
               Text.rich(
                 TextSpan(children: [
                   TextSpan(
-                    text: '${memberB.shortName} ${targetMale ? 'هو' : 'هي'} ',
+                    text: '${memberB.displayName(true)} ${targetMale ? 'هو' : 'هي'} ',
                     style: GoogleFonts.ibmPlexSansArabic(
                         fontSize: 14, color: AppColors.textSecondary),
                   ),
@@ -393,7 +394,7 @@ class _ChainNode extends StatelessWidget {
         children: [
           AppAvatar(
             photoUrl: member.photoUrl,
-            name: member.shortName,
+            name: member.displayName(true),
             gender: member.gender,
             size: 46,
             isDeceased: member.isDeceased,
@@ -402,7 +403,7 @@ class _ChainNode extends StatelessWidget {
           ),
           const Gap(6),
           Text(
-            isFirst ? 'أنت' : member.firstName,
+            isFirst ? 'أنت' : member.displayName(true).split(' ').first,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
@@ -458,7 +459,7 @@ class _MemberPickerState extends ConsumerState<_MemberPicker> {
     final filtered = widget.members.where((m) {
       if (_query.isEmpty) return true;
       return m.fullName.toLowerCase().contains(_query.toLowerCase()) ||
-          m.city.toLowerCase().contains(_query.toLowerCase());
+          (m.fullNameAr?.contains(_query) ?? false);
     }).toList();
 
     return DraggableScrollableSheet(
@@ -498,12 +499,12 @@ class _MemberPickerState extends ConsumerState<_MemberPicker> {
                   return ListTile(
                     leading: AppAvatar(
                       photoUrl: m.photoUrl,
-                      name: m.shortName,
+                      name: m.displayName(true),
                       gender: m.gender,
                       size: 40,
                     ),
-                    title: Text(m.fullName),
-                    subtitle: Text(m.city),
+                    title: Text(m.displayName(true)),
+                    subtitle: m.fullNameAr != null ? Text(m.fullName) : null,
                     onTap: () => Navigator.of(context).pop(m),
                   );
                 },

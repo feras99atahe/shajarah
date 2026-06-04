@@ -12,9 +12,9 @@ import '../widgets/member_node_widget.dart';
 import '../widgets/tree_painter.dart';
 
 const _nodeW = 110.0;
-const _nodeH = 140.0;
-const _hGap = 24.0;
-const _vGap = 80.0;
+const _nodeH = 150.0;
+const _hGap = 28.0;
+const _vGap = 72.0;
 
 class TreeScreen extends ConsumerStatefulWidget {
   const TreeScreen({super.key});
@@ -43,7 +43,10 @@ class _TreeScreenState extends ConsumerState<TreeScreen> {
       backgroundColor: AppColors.background,
       body: Column(
         children: [
-          _Header(familyAsync: familyAsync),
+          _Header(
+            familyAsync: familyAsync,
+            onResetView: () => _transformCtrl.value = Matrix4.identity(),
+          ),
           Expanded(
             child: membersAsync.when(
               loading: () => const Center(
@@ -104,52 +107,67 @@ class _TreeScreenState extends ConsumerState<TreeScreen> {
 // ---------------------------------------------------------------------------
 class _Header extends ConsumerWidget {
   final AsyncValue<dynamic> familyAsync;
-  const _Header({required this.familyAsync});
+  final VoidCallback onResetView;
+  const _Header({required this.familyAsync, required this.onResetView});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
-      color: AppColors.surface,
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
       padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + 8,
-        left: 20,
-        right: 20,
+        top: MediaQuery.of(context).padding.top + 10,
+        left: 18,
+        right: 8,
         bottom: 12,
       ),
       child: Row(
         children: [
-          const Text('🌳', style: TextStyle(fontSize: 28)),
-          const Gap(10),
+          // Logo badge
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: AppColors.primaryContainer,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.accent, width: 1.4),
+            ),
+            child: const Center(
+              child: Text('🌳', style: TextStyle(fontSize: 22)),
+            ),
+          ),
+          const Gap(12),
           Expanded(
             child: familyAsync.when(
               data: (family) => Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    family?.name ?? 'My Family',
+                    family?.name ?? 'شجرة عائلتي',
                     style: Theme.of(context).textTheme.titleLarge,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (family?.nameAr != null)
-                    Text(
-                      family!.nameAr!,
-                      style: GoogleFonts.cairo(
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                      ),
+                  Text(
+                    family?.nameAr ?? 'شجرة العائلة',
+                    style: GoogleFonts.reemKufi(
+                      fontSize: 12,
+                      color: AppColors.textTertiary,
                     ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
               loading: () => const SizedBox.shrink(),
-              error: (_, __) => const Text('Family Tree'),
+              error: (_, __) => const Text('شجرة العائلة'),
             ),
           ),
-          // Reset zoom
           IconButton(
             icon: const Icon(Icons.center_focus_strong_rounded),
             color: AppColors.textSecondary,
-            onPressed: () {},
-            tooltip: 'Reset view',
+            onPressed: onResetView,
+            tooltip: 'إعادة ضبط العرض',
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
@@ -339,22 +357,26 @@ class _EmptyTree extends StatelessWidget {
               .scale(duration: 600.ms, curve: Curves.elasticOut),
           const Gap(20),
           Text(
-            'Your tree is empty',
+            'شجرتك فارغة',
             style: Theme.of(context).textTheme.headlineMedium,
           ).animate().fadeIn(delay: 200.ms),
           const Gap(8),
           Text(
-            'Add the first member to start\nbuilding your family tree',
+            'أضف أول فرد لتبدأ ببناء\nشجرة عائلتك',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: AppColors.textSecondary,
+                  height: 1.6,
                 ),
           ).animate().fadeIn(delay: 300.ms),
           const Gap(32),
-          ElevatedButton.icon(
-            onPressed: onAddMember,
-            icon: const Icon(Icons.person_add_rounded),
-            label: const Text('Add First Member'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 60),
+            child: ElevatedButton.icon(
+              onPressed: onAddMember,
+              icon: const Icon(Icons.person_add_rounded),
+              label: const Text('أضف أول فرد'),
+            ),
           ).animate().fadeIn(delay: 400.ms).slideY(begin: 0.3),
         ],
       ),
@@ -381,7 +403,7 @@ class _BottomBar extends StatelessWidget {
         children: [
           _NavItem(
             icon: Icons.account_tree_rounded,
-            label: 'Tree',
+            label: 'الشجرة',
             selected: currentTab == 0,
             onTap: () {
               onTabChanged(0);
@@ -389,7 +411,7 @@ class _BottomBar extends StatelessWidget {
           ),
           _NavItem(
             icon: Icons.search_rounded,
-            label: 'Search',
+            label: 'البحث',
             selected: currentTab == 1,
             onTap: () {
               onTabChanged(1);
@@ -398,7 +420,7 @@ class _BottomBar extends StatelessWidget {
           ),
           _NavItem(
             icon: Icons.hub_rounded,
-            label: 'Relations',
+            label: 'الصلات',
             selected: currentTab == 2,
             onTap: () {
               onTabChanged(2);
@@ -406,8 +428,8 @@ class _BottomBar extends StatelessWidget {
             },
           ),
           _NavItem(
-            icon: Icons.person_outline_rounded,
-            label: 'Members',
+            icon: Icons.people_outline_rounded,
+            label: 'الأعضاء',
             selected: currentTab == 3,
             onTap: () {
               onTabChanged(3);
