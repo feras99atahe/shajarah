@@ -353,14 +353,24 @@ create index profiles_family_idx  on public.user_profiles(family_id);
 create index profiles_linked_idx  on public.user_profiles(linked_member_id);
 
 -- ============================================================
--- STORAGE — run once to enable profile photos
+-- STORAGE — profile photos (pure SQL · re-runnable)
 -- ============================================================
--- 1) Dashboard → Storage → New bucket → name "avatars" → Public bucket → Save.
---    (or run:)  insert into storage.buckets (id, name, public) values ('avatars','avatars',true);
--- 2) Allow authenticated uploads:
---    create policy "avatars upload" on storage.objects for insert to authenticated
---      with check (bucket_id = 'avatars');
---    create policy "avatars read" on storage.objects for select using (bucket_id = 'avatars');
+-- Create a public "avatars" bucket.
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+-- Policies on storage.objects (RLS there is already enabled by Supabase).
+drop policy if exists "avatars read"   on storage.objects;
+drop policy if exists "avatars upload" on storage.objects;
+drop policy if exists "avatars update" on storage.objects;
+
+create policy "avatars read" on storage.objects
+  for select using (bucket_id = 'avatars');
+create policy "avatars upload" on storage.objects
+  for insert to authenticated with check (bucket_id = 'avatars');
+create policy "avatars update" on storage.objects
+  for update to authenticated using (bucket_id = 'avatars');
 
 -- ============================================================
 -- RESET (run first if rebuilding over an existing database)
