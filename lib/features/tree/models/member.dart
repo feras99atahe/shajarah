@@ -4,11 +4,13 @@ class Member extends Equatable {
   final String id;
   final String familyId;
 
-  // Paternal four-part name — always publicly visible
+  // Paternal name — always publicly visible.
+  // familyName = اللقب/العائلة, clanName = القبيلة
   final String firstName;
   final String fatherName;
   final String grandfatherName;
   final String familyName;
+  final String? clanName;
 
   // Maternal four-part name — hidden until verified tree connection
   final String? motherFirstName;
@@ -39,6 +41,7 @@ class Member extends Equatable {
     required this.fatherName,
     required this.grandfatherName,
     required this.familyName,
+    this.clanName,
     this.motherFirstName,
     this.motherFatherName,
     this.motherGrandfatherName,
@@ -74,6 +77,8 @@ class Member extends Equatable {
   bool get hasMotherName =>
       motherFirstName != null && motherFirstName!.isNotEmpty;
 
+  bool get hasClan => clanName != null && clanName!.isNotEmpty;
+
   bool get isMale => gender == 'male';
   bool get isDeceased => deathDate != null;
 
@@ -95,6 +100,7 @@ class Member extends Equatable {
         fatherName: j['father_name'] as String? ?? '',
         grandfatherName: j['grandfather_name'] as String? ?? '',
         familyName: j['family_name'] as String? ?? '',
+        clanName: j['clan_name'] as String?,
         motherFirstName: j['mother_first_name'] as String?,
         motherFatherName: j['mother_father_name'] as String?,
         motherGrandfatherName: j['mother_grandfather_name'] as String?,
@@ -121,6 +127,7 @@ class Member extends Equatable {
         'father_name': fatherName,
         'grandfather_name': grandfatherName,
         'family_name': familyName,
+        if (clanName != null) 'clan_name': clanName,
         if (motherFirstName != null) 'mother_first_name': motherFirstName,
         if (motherFatherName != null) 'mother_father_name': motherFatherName,
         if (motherGrandfatherName != null)
@@ -142,6 +149,7 @@ class Member extends Equatable {
     String? fatherName,
     String? grandfatherName,
     String? familyName,
+    String? clanName,
     String? motherFirstName,
     String? motherFatherName,
     String? motherGrandfatherName,
@@ -162,6 +170,7 @@ class Member extends Equatable {
         fatherName: fatherName ?? this.fatherName,
         grandfatherName: grandfatherName ?? this.grandfatherName,
         familyName: familyName ?? this.familyName,
+        clanName: clanName ?? this.clanName,
         motherFirstName: motherFirstName ?? this.motherFirstName,
         motherFatherName: motherFatherName ?? this.motherFatherName,
         motherGrandfatherName:

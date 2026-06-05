@@ -5,14 +5,12 @@ import '../../tree/providers/tree_provider.dart';
 class FamilyUser {
   final String id;
   final String? fullName;
-  final String? fullNameAr;
   final String role;
   final DateTime createdAt;
 
   const FamilyUser({
     required this.id,
     this.fullName,
-    this.fullNameAr,
     required this.role,
     required this.createdAt,
   });
@@ -20,7 +18,6 @@ class FamilyUser {
   factory FamilyUser.fromJson(Map<String, dynamic> j) => FamilyUser(
         id: j['id'] as String,
         fullName: j['full_name'] as String?,
-        fullNameAr: j['full_name_ar'] as String?,
         role: j['role'] as String? ?? 'viewer',
         createdAt: DateTime.parse(j['created_at'] as String),
       );
@@ -46,7 +43,7 @@ final familyUsersProvider = FutureProvider<List<FamilyUser>>((ref) async {
   final supabase = ref.watch(supabaseProvider);
   final data = await supabase
       .from('user_profiles')
-      .select('id, full_name, full_name_ar, role, created_at')
+      .select('id, full_name, role, created_at')
       .eq('family_id', familyId)
       .order('created_at');
   return (data as List)

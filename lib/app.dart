@@ -12,19 +12,15 @@ class ShajarahApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'شجرة · Shajarah',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
+      theme: AppTheme.light,
       routerConfig: appRouter,
-      // Arabic-first: default the whole app to RTL.
       locale: const Locale('ar'),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('ar'),
-        Locale('en'),
-      ],
+      supportedLocales: const [Locale('ar'), Locale('en')],
     );
   }
 }

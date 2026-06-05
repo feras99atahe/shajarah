@@ -1,37 +1,26 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
-import '../../../core/theme/app_colors.dart';
-import '../../../shared/widgets/app_avatar.dart';
+import '../../../core/widgets/widgets.dart';
 import '../../tree/models/member.dart';
 import '../../tree/models/relationship.dart';
 import '../../tree/providers/tree_provider.dart';
-import '../kinship.dart';
+import '../widgets/kinship_chain.dart';
 
-/// DROP-IN REPLACEMENT for
-/// lib/features/relationship/screens/relationship_finder_screen.dart
-///
-/// Identical BFS + provider logic. Only the result is restyled into the
-/// mockup's horizontal kinship chain with proper Arabic terms (عمّتك، جدّك …).
 class RelationshipFinderScreen extends ConsumerStatefulWidget {
   const RelationshipFinderScreen({super.key});
 
   @override
-  ConsumerState<RelationshipFinderScreen> createState() =>
-      _RelationshipFinderScreenState();
+  ConsumerState<RelationshipFinderScreen> createState() => _State();
 }
 
-class _RelationshipFinderScreenState
-    extends ConsumerState<RelationshipFinderScreen> {
-  Member? _memberA;
-  Member? _memberB;
-  List<_PathStep>? _result;
-  bool _isSearching = false;
+class _State extends ConsumerState<RelationshipFinderScreen> {
+  Member? _a;
+  Member? _b;
 
-  void _pickMember(bool isA) async {
+  String _initial(Member m) => m.firstName.isNotEmpty ? m.firstName.characters.first : '؟';
+
+  Future<void> _pick(bool isA) async {
     final members = await ref.read(membersProvider.future);
     if (!mounted) return;
     final picked = await showModalBottomSheet<Member>(
@@ -39,76 +28,29 @@ class _RelationshipFinderScreenState
       isScrollControlled: true,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => _MemberPicker(members: members),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => _MemberPicker(members: members, initial: _initial),
     );
-    if (picked == null) return;
-    setState(() {
-      if (isA) {
-        _memberA = picked;
-      } else {
-        _memberB = picked;
-      }
-      _result = null;
-    });
+    if (picked != null) setState(() => isA ? _a = picked : _b = picked);
   }
 
-  Future<void> _findRelationship() async {
-    if (_memberA == null || _memberB == null) return;
-    setState(() {
-      _isSearching = true;
-      _result = null;
-    });
-    try {
-      final adjacency = await ref.read(adjacencyProvider.future);
-      final path = _bfsPath(adjacency, _memberA!.id, _memberB!.id);
-      final members = await ref.read(membersProvider.future);
-      final memberMap = {for (final m in members) m.id: m};
-      setState(() {
-        if (path == null) {
-          _result = [];
-        } else {
-          _result = path.map((step) {
-            final m = memberMap[step.memberId];
-            return _PathStep(
-              member: m!,
-              relationshipType: step.relationshipType,
-            );
-          }).toList();
-        }
-      });
-    } finally {
-      if (mounted) setState(() => _isSearching = false);
-    }
-  }
-
-  // BFS to find shortest relationship path (unchanged)
-  List<_RawStep>? _bfsPath(
-    Map<String, List<(String, RelationshipType)>> adjacency,
-    String fromId,
-    String toId,
-  ) {
-    if (fromId == toId) return [];
-    final visited = <String>{fromId};
-    final queue = <List<_RawStep>>[
-      [_RawStep(memberId: fromId, relationshipType: null)],
+  /// BFS path A→B as [(memberId, edgeFromPrev)].
+  List<(String, RelationshipType?)>? _path(
+      Map<String, List<(String, RelationshipType)>> adj, String from, String to) {
+    if (from == to) return [(from, null)];
+    final visited = {from};
+    final queue = <List<(String, RelationshipType?)>>[
+      [(from, null)]
     ];
     while (queue.isNotEmpty) {
-      final path = queue.removeAt(0);
-      final currentId = path.last.memberId;
-      for (final entry
-          in adjacency[currentId] ?? <(String, RelationshipType)>[]) {
-        final nextId = entry.$1;
-        final relType = entry.$2;
-        if (visited.contains(nextId)) continue;
-        final newPath = [
-          ...path,
-          _RawStep(memberId: nextId, relationshipType: relType),
-        ];
-        if (nextId == toId) return newPath;
-        visited.add(nextId);
-        queue.add(newPath);
+      final p = queue.removeAt(0);
+      final cur = p.last.$1;
+      for (final (next, type) in adj[cur] ?? const <(String, RelationshipType)>[]) {
+        if (visited.contains(next)) continue;
+        final np = [...p, (next, type)];
+        if (next == to) return np;
+        visited.add(next);
+        queue.add(np);
       }
     }
     return null;
@@ -116,88 +58,65 @@ class _RelationshipFinderScreenState
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('مكتشف الصلات')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'اكتب اسمين، واعرف صلة القرابة بينهما',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: AppColors.textSecondary),
-            ).animate().fadeIn(),
-            const Gap(24),
-            _MemberSelector(
-              label: 'الشخص الأول',
-              member: _memberA,
-              onTap: () => _pickMember(true),
-            ).animate().fadeIn(delay: 100.ms).slideY(begin: 0.2),
-            const Gap(10),
-            const Center(
-              child: Icon(Icons.swap_vert_rounded,
-                  color: AppColors.textTertiary, size: 26),
+    final adj = ref.watch(adjacencyProvider).valueOrNull ?? const <String, List<(String, RelationshipType)>>{};
+    final byId = {
+      for (final m in (ref.watch(membersProvider).valueOrNull ?? const <Member>[])) m.id: m
+    };
+
+    List<(String, RelationshipType?)>? path;
+    if (_a != null && _b != null) path = _path(adj, _a!.id, _b!.id);
+
+    return AppScreen(
+      tab: 'link',
+      title: 'مكتشف الصلات',
+      sub: 'اكتب اسمين، واعرف صلة القرابة بينهما',
+      child: ListView(children: [
+        const SizedBox(height: 4),
+        _PickField(label: 'الشخص الأول', member: _a, initial: _a == null ? null : _initial(_a!), onTap: () => _pick(true)),
+        const SizedBox(height: 10),
+        Row(children: [
+          Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.line),
             ),
-            const Gap(10),
-            _MemberSelector(
-              label: 'الشخص الثاني',
-              member: _memberB,
-              onTap: () => _pickMember(false),
-            ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2),
-            const Gap(24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _memberA != null && _memberB != null
-                    ? _findRelationship
-                    : null,
-                icon: _isSearching
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2.5, color: Colors.white),
-                      )
-                    : const Icon(Icons.hub_rounded, size: 20),
-                label: const Text('اكتشف الصلة'),
-              ),
-            ).animate().fadeIn(delay: 300.ms),
-            const Gap(28),
-            if (_result != null)
-              _ResultSection(
-                memberA: _memberA!,
-                memberB: _memberB!,
-                path: _result!,
-              ).animate().fadeIn(delay: 100.ms).slideY(begin: 0.3),
-          ],
-        ),
-      ),
+            child: Icon(AppIcons.of('link'), size: 16, color: AppColors.accent),
+          ),
+          const SizedBox(width: 8),
+          const Expanded(child: Divider(color: AppColors.line)),
+        ]),
+        const SizedBox(height: 10),
+        _PickField(label: 'الشخص الثاني', member: _b, initial: _b == null ? null : _initial(_b!), onTap: () => _pick(false)),
+        const SizedBox(height: 24),
+
+        if (_a != null && _b != null) ...[
+          const SectionTitle('الصلة'),
+          if (path == null)
+            AppCard(
+              child: Row(children: [
+                Icon(Icons.info_outline_rounded, color: AppColors.accent),
+                const SizedBox(width: 12),
+                Expanded(child: Text('لا توجد صلة معروفة بين هذين الفردين.', style: ui(size: 14))),
+              ]),
+            )
+          else
+            AppCard(pad: 16, child: KinshipChain(path: path, byId: byId)),
+        ],
+      ]),
     );
   }
 }
 
-class _RawStep {
-  final String memberId;
-  final RelationshipType? relationshipType;
-  const _RawStep({required this.memberId, required this.relationshipType});
-}
-
-class _PathStep {
-  final Member member;
-  final RelationshipType? relationshipType;
-  const _PathStep({required this.member, required this.relationshipType});
-}
-
-// ── Member selector (restyled, Arabic) ────────────────────────────────────
-class _MemberSelector extends StatelessWidget {
+class _PickField extends StatelessWidget {
   final String label;
   final Member? member;
+  final String? initial;
   final VoidCallback onTap;
-  const _MemberSelector(
-      {required this.label, this.member, required this.onTap});
+  const _PickField({required this.label, this.member, this.initial, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -209,309 +128,95 @@ class _MemberSelector extends StatelessWidget {
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: member != null ? AppColors.primary : AppColors.border,
-            width: member != null ? 1.5 : 1,
-          ),
+              color: member != null ? AppColors.primary : AppColors.line,
+              width: member != null ? 1.5 : 1),
         ),
         child: member == null
-            ? Row(
-                children: [
-                  Container(
-                    width: 46,
-                    height: 46,
-                    decoration: const BoxDecoration(
-                      color: AppColors.primaryContainer,
-                      shape: BoxShape.circle,
-                    ),
-                    child:
-                        const Icon(Icons.person_add_rounded, color: AppColors.primary),
-                  ),
-                  const Gap(12),
-                  Text(label,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(color: AppColors.textSecondary)),
-                  const Spacer(),
-                  const Icon(Icons.chevron_left_rounded,
-                      color: AppColors.textTertiary),
-                ],
-              )
-            : Row(
-                children: [
-                  AppAvatar(
-                    photoUrl: member!.photoUrl,
-                    name: member!.fullName,
-                    gender: member!.gender,
-                    size: 46,
-                    isDeceased: member!.isDeceased,
-                  ),
-                  const Gap(12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(member!.fullName,
-                            style: Theme.of(context).textTheme.titleMedium),
-                        Text(member!.city,
-                            style: Theme.of(context).textTheme.bodySmall),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.edit_outlined,
-                      color: AppColors.primary, size: 18),
-                ],
-              ),
-      ),
-    );
-  }
-}
-
-// ── Result: headline + horizontal kinship chain ───────────────────────────
-class _ResultSection extends StatelessWidget {
-  final Member memberA;
-  final Member memberB;
-  final List<_PathStep> path;
-  const _ResultSection(
-      {required this.memberA, required this.memberB, required this.path});
-
-  @override
-  Widget build(BuildContext context) {
-    if (path.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: AppColors.warningLight,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.warning.withOpacity(0.4)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.info_outline, color: AppColors.warning),
-            const Gap(12),
-            Expanded(
-              child: Text('لا توجد صلة معروفة بين هذين الفردين.',
-                  style: Theme.of(context).textTheme.bodyMedium),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // hops relative to A (skip the start node)
-    final hops = [
-      for (var i = 1; i < path.length; i++)
-        KinHop(edge: path[i].relationshipType!, gender: path[i].member.gender)
-    ];
-    final term = Kinship.relationLabel(hops);
-    final targetMale = memberB.gender == 'male';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('الصلة',
-            style: GoogleFonts.ibmPlexSansArabic(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textSecondary)),
-        const Gap(10),
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Column(
-            children: [
-              // headline: "<name> هو/هي <term>"
-              Text.rich(
-                TextSpan(children: [
-                  TextSpan(
-                    text: '${memberB.shortName} ${targetMale ? 'هو' : 'هي'} ',
-                    style: GoogleFonts.ibmPlexSansArabic(
-                        fontSize: 14, color: AppColors.textSecondary),
-                  ),
-                  TextSpan(
-                    text: term,
-                    style: GoogleFonts.reemKufi(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary),
-                  ),
-                ]),
-                textAlign: TextAlign.center,
-              ),
-              const Gap(16),
-              // chain
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                reverse: true, // RTL: start from the right
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (var i = 0; i < path.length; i++) ...[
-                      _ChainNode(
-                        member: path[i].member,
-                        isFirst: i == 0,
-                        isLast: i == path.length - 1,
-                      ),
-                      if (i < path.length - 1)
-                        _ChainLink(label: Kinship.linkLabel(hops, i)),
-                    ],
-                  ],
+            ? Row(children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(color: AppColors.accentSoft, shape: BoxShape.circle),
+                  child: Icon(AppIcons.of('user'), color: AppColors.primary),
                 ),
-              ),
-              const Gap(14),
-              const Divider(height: 1),
-              const Gap(10),
-              Text(
-                'درجة القرابة ${Kinship.degree(path.length - 1)}',
-                style: GoogleFonts.ibmPlexSansArabic(
-                    fontSize: 12.5, color: AppColors.textSecondary),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ChainNode extends StatelessWidget {
-  final Member member;
-  final bool isFirst;
-  final bool isLast;
-  const _ChainNode(
-      {required this.member, this.isFirst = false, this.isLast = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 64,
-      child: Column(
-        children: [
-          AppAvatar(
-            photoUrl: member.photoUrl,
-            name: member.shortName,
-            gender: member.gender,
-            size: 46,
-            isDeceased: member.isDeceased,
-            isSelf: isFirst,
-            isLineage: isLast,
-          ),
-          const Gap(6),
-          Text(
-            isFirst ? 'أنت' : member.firstName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.ibmPlexSansArabic(
-              fontSize: 11.5,
-              fontWeight: isFirst ? FontWeight.w700 : FontWeight.w600,
-              color: isFirst ? AppColors.textPrimary : AppColors.textSecondary,
-            ),
-          ),
-        ],
+                const SizedBox(width: 12),
+                Text(label, style: ui(size: 15, weight: FontWeight.w500, color: AppColors.muted)),
+                const Spacer(),
+                Icon(AppIcons.of('chevron'), color: AppColors.faint),
+              ])
+            : Row(children: [
+                Avatar(char: initial, size: 46),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(member!.fullName, maxLines: 1, overflow: TextOverflow.ellipsis, style: ui(size: 15, weight: FontWeight.w600)),
+                    Text(member!.city, style: ui(size: 12, color: AppColors.muted)),
+                  ]),
+                ),
+                Icon(Icons.edit_outlined, size: 18, color: AppColors.primary),
+              ]),
       ),
     );
   }
 }
 
-class _ChainLink extends StatelessWidget {
-  final String label;
-  const _ChainLink({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: Column(
-        children: [
-          Text(label,
-              style: GoogleFonts.ibmPlexSansArabic(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.accent)),
-          const Icon(Icons.chevron_left_rounded,
-              size: 18, color: AppColors.textTertiary),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Member picker (Arabic) ────────────────────────────────────────────────
-class _MemberPicker extends ConsumerStatefulWidget {
+class _MemberPicker extends StatefulWidget {
   final List<Member> members;
-  const _MemberPicker({required this.members});
+  final String Function(Member) initial;
+  const _MemberPicker({required this.members, required this.initial});
 
   @override
-  ConsumerState<_MemberPicker> createState() => _MemberPickerState();
+  State<_MemberPicker> createState() => _MemberPickerState();
 }
 
-class _MemberPickerState extends ConsumerState<_MemberPicker> {
-  String _query = '';
+class _MemberPickerState extends State<_MemberPicker> {
+  final _searchCtrl = TextEditingController();
+  String _q = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final filtered = widget.members.where((m) {
-      if (_query.isEmpty) return true;
-      return m.fullName.toLowerCase().contains(_query.toLowerCase()) ||
-          m.city.toLowerCase().contains(_query.toLowerCase());
+      if (_q.isEmpty) return true;
+      return m.fullName.contains(_q) || m.city.contains(_q);
     }).toList();
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      maxChildSize: 0.95,
-      minChildSize: 0.4,
-      expand: false,
-      builder: (context, scrollCtrl) {
-        return Column(
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 12, bottom: 8),
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.border,
-                borderRadius: BorderRadius.circular(2),
-              ),
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        minChildSize: 0.4,
+        builder: (_, ctrl) => Column(children: [
+          Container(margin: const EdgeInsets.only(top: 12, bottom: 8), width: 36, height: 4, decoration: BoxDecoration(color: AppColors.line, borderRadius: BorderRadius.circular(2))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: SearchField(hint: 'ابحث بالاسم…', controller: _searchCtrl, onChanged: (v) => setState(() => _q = v)),
+          ),
+          Expanded(
+            child: ListView.builder(
+              controller: ctrl,
+              itemCount: filtered.length,
+              itemBuilder: (_, i) {
+                final m = filtered[i];
+                return MemberRow(
+                  char: widget.initial(m),
+                  name: m.fullName,
+                  rel: m.city,
+                  onTap: () => Navigator.pop(context, m),
+                );
+              },
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: TextField(
-                autofocus: true,
-                onChanged: (v) => setState(() => _query = v),
-                decoration: const InputDecoration(
-                  hintText: 'ابحث بالاسم…',
-                  prefixIcon: Icon(Icons.search_rounded),
-                ),
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                controller: scrollCtrl,
-                itemCount: filtered.length,
-                itemBuilder: (context, i) {
-                  final m = filtered[i];
-                  return ListTile(
-                    leading: AppAvatar(
-                      photoUrl: m.photoUrl,
-                      name: m.shortName,
-                      gender: m.gender,
-                      size: 40,
-                    ),
-                    title: Text(m.fullName),
-                    subtitle: Text(m.city),
-                    onTap: () => Navigator.of(context).pop(m),
-                  );
-                },
-              ),
-            ),
-          ],
-        );
-      },
+          ),
+        ]),
+      ),
     );
   }
 }

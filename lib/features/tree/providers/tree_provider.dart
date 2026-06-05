@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../../../features/auth/providers/auth_provider.dart';
 import '../models/member.dart';
 import '../models/relationship.dart';
@@ -37,6 +39,54 @@ final memberByIdProvider = FutureProvider.family<Member?, String>((ref, id) asyn
   } catch (_) {
     return null;
   }
+});
+
+// ---------------------------------------------------------------------------
+// Cross-family directory search (by city + clan + family name)
+// ---------------------------------------------------------------------------
+
+class PublicMember {
+  final String id, familyId, firstName, fatherName, grandfatherName, familyName, city, gender;
+  final String? clanName;
+  const PublicMember({
+    required this.id,
+    required this.familyId,
+    required this.firstName,
+    required this.fatherName,
+    required this.grandfatherName,
+    required this.familyName,
+    required this.city,
+    required this.gender,
+    this.clanName,
+  });
+
+  String get fullName => '$firstName $fatherName $grandfatherName $familyName';
+  bool get isMale => gender == 'male';
+
+  factory PublicMember.fromJson(Map<String, dynamic> j) => PublicMember(
+        id: j['id'] as String,
+        familyId: j['family_id'] as String,
+        firstName: j['first_name'] as String? ?? '',
+        fatherName: j['father_name'] as String? ?? '',
+        grandfatherName: j['grandfather_name'] as String? ?? '',
+        familyName: j['family_name'] as String? ?? '',
+        clanName: j['clan_name'] as String?,
+        city: j['city'] as String? ?? '',
+        gender: j['gender'] as String? ?? 'male',
+      );
+}
+
+/// Searches members across ALL families by city + clan + family name.
+final globalSearchProvider =
+    FutureProvider.family<List<PublicMember>, (String, String, String)>((ref, q) async {
+  final (city, clan, family) = q;
+  if (city.trim().isEmpty && clan.trim().isEmpty && family.trim().isEmpty) return [];
+  final data = await ref.read(supabaseProvider).rpc('search_members_global', params: {
+    'p_city': city.trim().isEmpty ? null : city.trim(),
+    'p_clan': clan.trim().isEmpty ? null : clan.trim(),
+    'p_family_name': family.trim().isEmpty ? null : family.trim(),
+  });
+  return (data as List).map((e) => PublicMember.fromJson(e as Map<String, dynamic>)).toList();
 });
 
 // ---------------------------------------------------------------------------
@@ -163,6 +213,7 @@ class TreeNotifier extends AsyncNotifier<void> {
     required String fatherName,
     required String grandfatherName,
     required String familyName,
+    String? clanName,
     String? motherFirstName,
     String? motherFatherName,
     String? motherGrandfatherName,
@@ -173,6 +224,7 @@ class TreeNotifier extends AsyncNotifier<void> {
     DateTime? deathDate,
     String? placeOfBirth,
     bool showBirthDate = false,
+    String? photoUrl,
     String? notes,
   }) async {
     final userId = ref.read(currentUserProvider)?.id;
@@ -182,6 +234,8 @@ class TreeNotifier extends AsyncNotifier<void> {
       'father_name': fatherName,
       'grandfather_name': grandfatherName,
       'family_name': familyName,
+      if (clanName != null && clanName.isNotEmpty) 'clan_name': clanName,
+      if (photoUrl != null && photoUrl.isNotEmpty) 'photo_url': photoUrl,
       if (motherFirstName != null) 'mother_first_name': motherFirstName,
       if (motherFatherName != null) 'mother_father_name': motherFatherName,
       if (motherGrandfatherName != null)
@@ -269,6 +323,22 @@ class TreeNotifier extends AsyncNotifier<void> {
     await _db.from('user_profiles')
         .update({'linked_member_id': memberId}).eq('id', userId);
     ref.invalidate(linkedMemberIdProvider);
+  }
+
+  /// Pick an image from the gallery and upload it to the `avatars` bucket.
+  /// Returns the public URL, or null if cancelled.
+  Future<String?> pickAndUploadPhoto() async {
+    final file = await ImagePicker().pickImage(
+        source: ImageSource.gallery, maxWidth: 800, imageQuality: 80);
+    if (file == null) return null;
+    final bytes = await file.readAsBytes();
+    final path = 'members/${const Uuid().v4()}.jpg';
+    await _db.storage.from('avatars').uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(upsert: true, contentType: 'image/jpeg'),
+        );
+    return _db.storage.from('avatars').getPublicUrl(path);
   }
 }
 
